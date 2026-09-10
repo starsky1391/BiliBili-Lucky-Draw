@@ -1,0 +1,76 @@
+
+services:
+  bili-db:
+    image: mysql:5.7
+    container_name: bili-db
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-luckybili}
+      MYSQL_USER: ${MYSQL_USER:-luckybili}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    ports:
+      - "3206:3306"
+    volumes:
+      - ./lib/init_db_script.sql:/docker-entrypoint-initdb.d/init_db_script.sql  # 挂载init_db_script.sql文件到容器内的初始化目录
+      - ./db_data:/var/lib/mysql  # 持久化MySQL数据
+    command: --default-authentication-plugin=mysql_native_password
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u$${MYSQL_USER} -p$${MYSQL_PASSWORD} --silent"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 20s
+
+
+  bili-selenium:
+    image: selenium/standalone-chrome:latest
+    container_name: bili-selenium
+    ports:
+      - 5555:4444
+    shm_size: 1g
+    mem_limit: 2g
+    environment:
+      - SE_NODE_MAX_SESSIONS=1
+      - SE_NODE_MAX_INSTANCES=1
+      - SE_NODE_OVERRIDE_MAX_SESSIONS=true
+      - SE_NODE_SESSION_TIMEOUT=120
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:4444/status | grep -q '\"ready\"[[:space:]]*:[[:space:]]*true'"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+
+  # 执行转发动态的服务
+  dynamic_share:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - .:/app
+    environment:
+      DB_HOST: bili-db
+      PORT: 3306
+      DRIVER_VERSION: Online
+      SELENIUM_HOST: bili-selenium
+      SELENIUM_PORT: 4444
+      SELENIUM_PATH: /wd/hub
+      SCHEDULE_INTERVAL_HOURS: 3
+      CLEANUP_INTERVAL_HOURS: ${CLEANUP_INTERVAL_HOURS:-24}
+      SHARE_BATCH_LIMIT: 0
+      CLEANUP_ENABLED: ${CLEANUP_ENABLED:-false}
+      CLEANUP_DRY_RUN: ${CLEANUP_DRY_RUN:-true}
+      UNFOLLOW_ENABLED: ${UNFOLLOW_ENABLED:-false}
+      SHARE_BROWSER_RECYCLE_EVERY: 20
+      SHARE_RESTART_ERROR_LIMIT: 3
+      SELENIUM_PAGE_LOAD_TIMEOUT: 60
+      SCAN_CACHE_RETRY_HOURS: 24
+    restart: always
+    depends_on:
+      bili-selenium:
+        condition: service_healthy
+      bili-db:
+        condition: service_healthy
+
+
+
