@@ -4,6 +4,7 @@ from datetime import datetime
 from dao.init_db import init_db
 from service.log_service.log_printer_service import MyLogger
 from utils import globals
+from utils.runtime_settings import get_cleanup_mode
 
 mylogger = MyLogger('expired_share_cleanup.py').getLogger()
 
@@ -14,7 +15,8 @@ class ExpiredShareCleanup:
         self.db = init_db()
 
     def run(self):
-        if not globals.cleanup_enabled:
+        cleanup_mode = get_cleanup_mode()
+        if cleanup_mode == "disabled":
             mylogger.info("过期转发清理未启用")
             return
         rows = self.load_expired_rows()
@@ -43,7 +45,7 @@ class ExpiredShareCleanup:
                 self.update_failed(row['id'], str(exc))
                 summary['failed'] += 1
                 mylogger.error("删除本人动态失败 %s: %s", own_id, exc)
-        if globals.unfollow_enabled and not globals.cleanup_dry_run:
+        if cleanup_mode == "delete_and_unfollow" and not globals.cleanup_dry_run:
             for up_id in affected_up_ids:
                 if self.can_unfollow(up_id):
                     self.unfollow(up_id)

@@ -15,6 +15,7 @@ from dao.init_db import init_db
 from service.login_service.login_service import LoginService
 from service.cleanup_service.backfill_account_dynamics import AccountDynamicBackfill
 from utils import globals
+from utils.runtime_settings import VALID_CLEANUP_MODES, get_cleanup_mode, set_cleanup_mode
 from utils.webdriver_util import init_webdriver
 
 app = FastAPI(title="Bilibili Lucky Draw Console")
@@ -182,6 +183,27 @@ def auth_status():
     return public_auth()
 
 
+@app.get("/api/settings/cleanup")
+def cleanup_settings():
+    mode = get_cleanup_mode()
+    return {
+        "mode": mode,
+        "options": [
+            {"value": "disabled", "label": "关闭过期清理"},
+            {"value": "delete_only", "label": "只删除本人过期动态"},
+            {"value": "delete_and_unfollow", "label": "删除动态并取关相关 UP"},
+        ],
+    }
+
+
+@app.post("/api/settings/cleanup")
+def update_cleanup_settings(payload: dict):
+    mode = payload.get("mode")
+    if mode not in VALID_CLEANUP_MODES:
+        raise HTTPException(status_code=400, detail="无效的清理模式")
+    return {"mode": set_cleanup_mode(mode)}
+
+
 @app.post("/api/auth/qrcode/start")
 def start_qrcode():
     try:
@@ -282,6 +304,7 @@ def overview():
         "auth": public_auth(),
         "selenium": "connected",
         "failures": int(failure_rows[0].get("count") or 0),
+        "cleanup_mode": get_cleanup_mode(),
         "pending_draws": int(pending_rows[0].get("count") or 0),
         "expired_draws": int(expired_rows[0].get("count") or 0),
         "tasks": {

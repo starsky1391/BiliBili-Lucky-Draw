@@ -7,6 +7,8 @@ Log
 cookie
 db_data
 *.log
+runtime_settings.json
+runtime_settings.json.tmp
 
 
 __pycache__

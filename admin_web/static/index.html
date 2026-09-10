@@ -53,6 +53,15 @@
             <p class="hint">登录页会在弹窗中打开，扫码成功后任务自动恢复。</p>
           </div>
           <div class="panel">
+            <h3>过期动态清理</h3>
+            <label class="setting-row" for="cleanupMode">
+              <span>清理方式</span>
+              <select id="cleanupMode"></select>
+            </label>
+            <p id="cleanupModeHint" class="hint">保存后下次每日清理任务生效。</p>
+            <button id="saveCleanupMode" class="primary">保存清理设置</button>
+          </div>
+          <div class="panel">
             <h3>安全边界</h3>
             <p>管理端仅绑定本机。Cookie 只保存到容器共享目录，不显示在页面，也不写入数据库。</p>
           </div>
@@ -74,6 +83,6 @@
       <div class="modal-foot"><span id="loginHint">请在窗口中的 B 站页面完成登录。</span><span id="loginState">等待登录</span></div>
     </div>
   </div>
-  <script src="/assets/app.js?v=20260910-7"></script>
+  <script src="/assets/app.js?v=20260910-8"></script>
 </body>
 </html>
