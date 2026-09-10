@@ -1,3 +1,4 @@
+import re
 from datetime import datetime
 
 
@@ -94,7 +95,11 @@ class DrawDynamicDao(object):
 
     def query_by_dyn_url(self, dyn_url):
         try:
-            sql = "SELECT * FROM " + self.table_name + " where dyn_url = '" + dyn_url + "'";
+            match = re.search(r'(?:/opus/|/)(\d+)(?:[/?#]|$)', str(dyn_url or ''))
+            if not match:
+                return {}
+            sql = ("SELECT * FROM " + self.table_name
+                   + " where dynamic_id = '" + match.group(1) + "'")
             data = self.db.select_db(sql)  # 用mysql_operate文件中的db的select_db方法进行查询
             return data
         except Exception as e:
@@ -102,15 +107,33 @@ class DrawDynamicDao(object):
 
     def insert(self, dyn_url, source, note):
         try:
+            match = re.search(r'(?:/opus/|/)(\d+)(?:[/?#]|$)', str(dyn_url or ''))
+            dynamic_id = match.group(1) if match else None
+            if not dynamic_id:
+                return False
             params = {}
-            params['dyn_url'] = str(dyn_url)
+            params['dyn_url'] = 'https://www.bilibili.com/opus/' + dynamic_id
+            params['dynamic_id'] = dynamic_id
             params['source'] = str(source)
             params['status'] = '0'
             params['note'] = str(note)
             params['insert_time'] = str(datetime.now())
-            self.db.insert(self.table_name, params)
+            self.db.cur.execute(
+                """INSERT INTO t_draw_dynamic
+                   (dynamic_id, dyn_url, source, status, note, insert_time)
+                   VALUES (%s, %s, %s, %s, %s, %s)
+                   ON DUPLICATE KEY UPDATE
+                     source=COALESCE(NULLIF(VALUES(source), ''), source),
+                     note=COALESCE(NULLIF(VALUES(note), ''), note)""",
+                (
+                    params['dynamic_id'], params['dyn_url'], params['source'],
+                    params['status'], params['note'], params['insert_time']
+                )
+            )
+            self.db.con.commit()
             return True
         except Exception as e:
+            print(e)
             return False
 
     def ensure_dynamic(self, dynamic_id, dyn_url, up_id=None, publish_time=None,
@@ -159,17 +182,27 @@ class DrawDynamicDao(object):
 
     def update_sharedUrl(self, url, status):
         try:
-            params = {'status': str(status)}
-            cond_dict = {'dyn_url': url}
-            self.db.update(self.table_name, params, cond_dict)
+            match = re.search(r'(?:/opus/|/)(\d+)(?:[/?#]|$)', str(url or ''))
+            if not match:
+                return
+            self.db.cur.execute(
+                "UPDATE t_draw_dynamic SET status=%s WHERE dynamic_id=%s",
+                (str(status), match.group(1))
+            )
+            self.db.con.commit()
         except Exception as e:
             print(e)
 
     def update_lottery_time(self, url, lottery_time):
         try:
-            params = {'lottery_time': str(lottery_time)}
-            cond_dict = {'dyn_url': url}
-            self.db.update(self.table_name, params, cond_dict)
+            match = re.search(r'(?:/opus/|/)(\d+)(?:[/?#]|$)', str(url or ''))
+            if not match:
+                return
+            self.db.cur.execute(
+                "UPDATE t_draw_dynamic SET lottery_time=%s WHERE dynamic_id=%s",
+                (lottery_time, match.group(1))
+            )
+            self.db.con.commit()
         except Exception as e:
             print(e)
 
