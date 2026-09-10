@@ -4,6 +4,7 @@ Log
 .env
 .env.*
 !.env.example
+cookie
 db_data
 *.log
 

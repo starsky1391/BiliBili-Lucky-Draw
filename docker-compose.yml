@@ -48,6 +48,7 @@ services:
       dockerfile: Dockerfile
     volumes:
       - .:/app
+      - ./cookie:/app/cookie
     environment:
       DB_HOST: bili-db
       PORT: 3306
@@ -65,6 +66,32 @@ services:
       SHARE_RESTART_ERROR_LIMIT: 3
       SELENIUM_PAGE_LOAD_TIMEOUT: 60
       SCAN_CACHE_RETRY_HOURS: 24
+    restart: always
+    depends_on:
+      bili-selenium:
+        condition: service_healthy
+      bili-db:
+        condition: service_healthy
+
+  admin_web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["uvicorn", "admin_web.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    volumes:
+      - .:/app
+      - ./cookie:/app/cookie
+      - ./Log:/app/Log
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      DB_HOST: bili-db
+      PORT: 3306
+      DRIVER_VERSION: Online
+      SELENIUM_HOST: bili-selenium
+      SELENIUM_PORT: 4444
+      SELENIUM_PATH: /wd/hub
+      COOKIE_DIR: /app/cookie
     restart: always
     depends_on:
       bili-selenium:

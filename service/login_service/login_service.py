@@ -8,6 +8,7 @@ from utils import globals
 from utils.file_util import append_data_to_env
 from utils.time_util import random_sleep
 from utils.webdriver_util import ElementUtil, init_webdriver
+from service.auth_service import mark_authenticated, mark_login_required
 
 mylogger = MyLogger('login_service.py').getLogger()
 
@@ -56,8 +57,12 @@ class LoginService(object):
             random_sleep(start=1, end=2)
             if not self.wait_logged_in():
                 raise Exception("Cookie登录失败，请检查SESSDATA是否有效")
+            uid = next((cookie.get('value') for cookie in self.bro.get_cookies()
+                        if cookie.get('name') == 'DedeUserID'), None)
+            mark_authenticated(uid)
             mylogger.info('使用cookie自动登录成功！')
         except Exception as e:
+            mark_login_required(str(e))
             mylogger.error('登录失败')
             mylogger.error("[出错原因为：%s]" % e)
             raise

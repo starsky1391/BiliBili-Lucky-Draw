@@ -22,3 +22,6 @@ __pycache__/
 db_data/
 Log/
 .env
+cookie/
+admin_web/__pycache__/
+*.pyc

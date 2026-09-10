@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bili Draw Console</title>
+  <link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <p class="kicker">BILI / DRAW OPS</p>
+      <h1>运行控制台</h1>
+    </div>
+    <div id="authBadge" class="badge muted">检查登录状态</div>
+  </header>
+  <main class="layout">
+    <aside class="rail">
+      <button class="nav active" data-tab="overview">总览</button>
+      <button class="nav" data-tab="dynamics">动态管理</button>
+      <button class="nav" data-tab="logs">日志</button>
+      <button class="nav" data-tab="settings">设置</button>
+    </aside>
+    <section class="content">
+      <div id="overview" class="tab active">
+        <div class="section-head"><div><p class="kicker">LIVE PULSE</p><h2>今天的运行面</h2></div><span id="updatedAt"></span></div>
+        <div class="metric-grid">
+          <article class="metric"><span>登录</span><strong id="authValue">--</strong><small id="authTime">等待检查</small></article>
+          <article class="metric"><span>收集任务</span><strong id="collectValue">--</strong><small>每 3 小时</small></article>
+          <article class="metric"><span>清理任务</span><strong id="cleanupValue">--</strong><small>每天一次</small></article>
+          <article class="metric warning"><span>失败动态</span><strong id="failureCount">--</strong><small>需要处理的记录</small></article>
+        </div>
+        <div class="panel"><div class="panel-title"><h3>系统提示</h3><span id="systemNote">正在读取</span></div><p id="overviewNote">--</p></div>
+      </div>
+      <div id="dynamics" class="tab">
+        <div class="section-head"><div><p class="kicker">ATTENTION QUEUE</p><h2>失败动态</h2></div><button class="icon-button" id="refreshFailures" title="刷新失败动态">↻</button></div>
+        <div id="failureList" class="failure-list"></div>
+        <details class="fold"><summary>成功、跳过、已清理记录</summary><p>正常记录已折叠。数据库仍保留完整状态，可继续通过接口扩展筛选。</p></details>
+      </div>
+      <div id="logs" class="tab">
+        <div class="section-head"><div><p class="kicker">TRACE</p><h2>运行日志</h2></div><button class="icon-button" id="refreshLogs" title="刷新日志">↻</button></div>
+        <pre id="logBox" class="log-box">正在读取日志...</pre>
+      </div>
+      <div id="settings" class="tab">
+        <div class="section-head"><div><p class="kicker">ACCOUNT</p><h2>账号设置</h2></div></div>
+        <div class="settings-grid">
+          <div class="panel">
+            <h3>B 站登录</h3>
+            <p id="settingsStatus">检查中</p>
+            <button id="startLogin" class="primary">扫码登录</button>
+            <div id="qrWrap" class="qr-wrap hidden"><img id="qrImage" alt="B站登录二维码"><p>请使用 B 站客户端扫码，登录成功后任务会自动恢复。</p></div>
+          </div>
+          <div class="panel">
+            <h3>安全边界</h3>
+            <p>管理端仅绑定本机。Cookie 只保存到容器共享目录，不显示在页面，也不写入数据库。</p>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+  <script src="/assets/app.js"></script>
+</body>
+</html>

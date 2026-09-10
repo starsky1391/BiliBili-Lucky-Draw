@@ -7,6 +7,7 @@ from service.log_service.log_printer_service import MyLogger
 from utils import globals
 from service.cleanup_service.expired_share_cleanup import ExpiredShareCleanup
 from service.cleanup_service.backfill_account_dynamics import AccountDynamicBackfill
+from service.auth_service import require_authenticated
 
 mylogger = MyLogger('main.py').getLogger()
 task_lock = threading.Lock()
@@ -19,11 +20,13 @@ def do_share():
 
 
 def collect_and_share():
+    require_authenticated()
     do_search()
     do_share()
 
 
 def cleanup_expired():
+    require_authenticated()
     for user in MultiUsersShareService().get_multi_uses():
         try:
             sync_summary = AccountDynamicBackfill(user).sync_new_personal_forwards()

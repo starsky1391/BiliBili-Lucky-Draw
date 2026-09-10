@@ -128,3 +128,15 @@ create table if not exists t_account_dynamic
     key idx_account_cleanup (account_key, cleanup_status)
 ) engine=InnoDB default charset=utf8mb4;
 
+create table if not exists t_auth_session
+(
+    id                bigint auto_increment primary key,
+    account_key       varchar(100) not null unique,
+    status            varchar(30) not null default 'UNKNOWN',
+    uid               varchar(50) null,
+    last_verified_at  datetime null,
+    cookie_saved_at   datetime null,
+    last_error        varchar(500) null,
+    update_time       datetime not null
+) engine=InnoDB default charset=utf8mb4;
+

@@ -16,6 +16,7 @@ from utils import globals
 from utils.globals import get_random_comment_content, get_random_share_content
 from utils.ip_util import remove_query_string
 from utils.webdriver_util import init_webdriver
+from service.auth_service import require_authenticated
 
 mylogger = MyLogger('share_from_biliLick.py').getLogger()
 
@@ -36,6 +37,7 @@ class BiliLinkShare(object):
         mylogger.error("启动：根据B站up主的分享链接进行抽奖动态转发!")
 
     def do_share_by_links(self):
+        require_authenticated()
         do_share_cnt = 0
         success_share_cnt = 0
         expired_cnt = 0
