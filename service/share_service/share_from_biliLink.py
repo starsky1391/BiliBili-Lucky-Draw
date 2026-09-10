@@ -1,4 +1,6 @@
 import re
+import random
+import time
 from datetime import datetime
 
 from dao.draw_dynamic_dao import DrawDynamicDao
@@ -45,6 +47,7 @@ class BiliLinkShare(object):
         break_flag = 0
         processed_since_restart = 0
         consecutive_errors = 0
+        processed_share_attempts = 0
         try:
             self.login_browser()
             datas = self.get_pending_dynamic_links()
@@ -69,9 +72,35 @@ class BiliLinkShare(object):
                     self.draw_dynamic_dao.update_sharedUrl(url=lucky_dynamic_url, status=1)
                     continue
                 do_share_cnt = do_share_cnt + 1
-                dyn = DynamicShareBase()
-                dyn.user_id = self.user_id
-                dyn.share_one(self.bro, self.chains, lucky_dynamic_url, get_random_share_content(), get_random_comment_content())
+                if processed_share_attempts > 0:
+                    wait_seconds = random.randint(20, 30)
+                    mylogger.info(
+                        "正常转发限速等待 %.0f 秒（准备处理第 %s 条）",
+                        wait_seconds, processed_share_attempts + 1
+                    )
+                    time.sleep(wait_seconds)
+                risk_retry = False
+                while True:
+                    dyn = DynamicShareBase()
+                    dyn.user_id = self.user_id
+                    dyn.share_one(
+                        self.bro,
+                        self.chains,
+                        lucky_dynamic_url,
+                        get_random_share_content(),
+                        get_random_comment_content()
+                    )
+                    evidence = self.get_risk_control_evidence(dyn.last_error)
+                    if not evidence or risk_retry:
+                        break
+                    risk_retry = True
+                    mylogger.error(
+                        "正常转发首次确认 B 站风控特征：%s，暂停 30 秒后重试当前动态：%s",
+                        evidence,
+                        lucky_dynamic_url
+                    )
+                    time.sleep(30)
+                processed_share_attempts = processed_share_attempts + 1
                 if dyn.lottery_time is not None:
                     self.draw_dynamic_dao.update_lottery_time(lucky_dynamic_url, dyn.lottery_time)
                 # 保存转发状态和关注的up主信息
@@ -97,6 +126,13 @@ class BiliLinkShare(object):
                     failed_cnt = failed_cnt + 1
                     consecutive_errors = consecutive_errors + 1
                     self.draw_dynamic_dao.update_sharedUrl(url=lucky_dynamic_url, status=3)
+                    evidence = self.get_risk_control_evidence(dyn.last_error)
+                    if evidence:
+                        mylogger.error(
+                            "正常转发确认 B 站风控特征：%s，立即停止本轮，当前动态=%s",
+                            evidence, lucky_dynamic_url
+                        )
+                        raise RuntimeError("B站安全风控（错误号 412）")
 
                 processed_since_restart = processed_since_restart + 1
                 self.cleanup_browser_page()
@@ -126,6 +162,22 @@ class BiliLinkShare(object):
             # RemoveMsgService(self.user_id, success_share_cnt, bro=self.bro, chains=self.chains).do_remove()
             if self.owns_browser:
                 self.close_browser()
+
+    @staticmethod
+    def get_risk_control_evidence(error):
+        normalized = re.sub(r"\s+", " ", str(error or "")).strip().lower()
+        patterns = (
+            ("错误号: 412", r"错误号\s*[:：]\s*412"),
+            ("错误号 412", r"错误号\s+412"),
+            ("安全风控策略", r"触发哔哩哔哩安全风控策略"),
+            ("请求被拒绝", r"该次访问请求被拒绝"),
+            ("security control policy", r"security control policy"),
+            ("request was rejected", r"request was rejected"),
+        )
+        for label, pattern in patterns:
+            if re.search(pattern, normalized):
+                return label
+        return None
 
     def login_browser(self):
         self.ensure_browser()

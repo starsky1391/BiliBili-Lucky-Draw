@@ -18,7 +18,7 @@ class MyLogger(object):
         PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # 根目录
         time_now = time.strftime('%Y_%m_%d_%H', time.localtime()) + '_err' + '.log'  # log文件命名：2022_04_02_21.log
         self.fileHandler = logging.FileHandler(os.path.join('./', "Log", time_now ), 'a', encoding='utf-8')
-        self.fileHandler.setLevel("ERROR")
+        self.fileHandler.setLevel("INFO")
         # ④用formatter渲染这两个Handler
         self.streamHandler.setFormatter(self.formatter)
         self.fileHandler.setFormatter(self.formatter)

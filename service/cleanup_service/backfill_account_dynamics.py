@@ -1,8 +1,10 @@
 import re
+import random
 import time
 from datetime import datetime
 
-from selenium.common.exceptions import TimeoutException
+from selenium.common.exceptions import InvalidSessionIdException, TimeoutException
+from selenium.webdriver.common.by import By
 
 from dao.account_dynamic_dao import AccountDynamicDao
 from dao.draw_dynamic_dao import DrawDynamicDao
@@ -25,6 +27,23 @@ class AccountDynamicBackfill:
         self.draw_dao = DrawDynamicDao(self.db)
         self.bro = None
         self.chains = None
+
+    def reset_browser_session(self):
+        old_browser = self.bro
+        self.bro = None
+        self.chains = None
+        if old_browser is not None:
+            try:
+                old_browser.quit()
+            except Exception:
+                pass
+        self.bro, self.chains = init_webdriver()
+        LoginService(self.bro, self.chains, self.account_key).login_by_cookie()
+        mylogger.info('Selenium会话已重建，已使用现有Cookie自动登录')
+
+    @staticmethod
+    def is_session_lost_error(exc):
+        return isinstance(exc, InvalidSessionIdException) or 'unable to find session with id' in str(exc).lower()
 
     def run(self):
         self.bro, self.chains = init_webdriver()
@@ -149,7 +168,14 @@ class AccountDynamicBackfill:
             for row in rows:
                 try:
                     if summary['updated'] + summary['failed'] > 0:
-                        time.sleep(30)
+                        wait_seconds = random.randint(20, 30)
+                        mylogger.info(
+                            '历史回填限速等待 %.0f 秒（第 %s/%s 条）',
+                            wait_seconds,
+                            summary['updated'] + summary['failed'] + 1,
+                            summary['checked']
+                        )
+                        time.sleep(wait_seconds)
                     dynamic_id = str(row.get('dynamic_id') or '')
                     if not dynamic_id.isdigit() or int(dynamic_id) <= 0:
                         summary['failed'] += 1
@@ -163,10 +189,39 @@ class AccountDynamicBackfill:
                     else:
                         summary['updated'] += 1
                 except Exception as exc:
+                    if self.is_session_lost_error(exc):
+                        try:
+                            mylogger.warning(
+                                '历史回填检测到Selenium会话失效，重建会话后重试当前动态：%s',
+                                dynamic_id
+                            )
+                            self.reset_browser_session()
+                            self.backfill_detail(
+                                dynamic_id,
+                                'https://www.bilibili.com/opus/' + dynamic_id
+                            )
+                            detail_row = self.find_dynamic(dynamic_id)
+                            if detail_row and detail_row.get('up_id'):
+                                self.account_dao.ensure_up(detail_row['up_id'])
+                            if (
+                                not detail_row
+                                or not detail_row.get('up_id')
+                                or not detail_row.get('publish_time')
+                                or not detail_row.get('lottery_time')
+                            ):
+                                summary['failed'] += 1
+                            else:
+                                summary['updated'] += 1
+                            continue
+                        except Exception as retry_exc:
+                            exc = retry_exc
                     summary['failed'] += 1
                     mylogger.warning('status=1 动态补齐失败 %s：%s', row.get('dynamic_id'), exc)
                 finally:
-                    self.bro.get('about:blank')
+                    try:
+                        self.bro.get('about:blank')
+                    except Exception:
+                        pass
             mylogger.info('status=1 动态元数据回填完成：%s', summary)
             return summary
         finally:
@@ -174,6 +229,145 @@ class AccountDynamicBackfill:
                 self.bro.quit()
             except Exception:
                 pass
+
+    def retry_failed_dynamics(self):
+        """限速重新识别失败动态；遇到风控立即停止本轮。"""
+        self.bro, self.chains = init_webdriver()
+        summary = {
+            'checked': 0,
+            'updated': 0,
+            'failed': 0,
+            'processed': 0,
+            'remaining': 0,
+            'paused': False,
+            'stop_reason': None,
+        }
+        try:
+            LoginService(self.bro, self.chains, self.account_key).login_by_cookie()
+            self.db.cur.execute("""
+                SELECT dynamic_id, dyn_url
+                FROM t_draw_dynamic
+                WHERE status='3'
+                ORDER BY insert_time, dynamic_id
+            """)
+            rows = self.db.cur.fetchall()
+            summary['checked'] = len(rows)
+            for index, row in enumerate(rows):
+                summary['processed'] = index + 1
+                if index > 0:
+                    wait_seconds = random.randint(20, 30)
+                    mylogger.info(
+                        '重新识别限速等待 %.0f 秒（第 %s/%s 条）',
+                        wait_seconds, index + 1, len(rows)
+                    )
+                    time.sleep(wait_seconds)
+                dynamic_id = str(row.get('dynamic_id') or '')
+                dyn_url = str(row.get('dyn_url') or '')
+                try:
+                    if not dynamic_id.isdigit() or not dyn_url:
+                        raise RuntimeError('动态链接或动态ID无效')
+                    source_url = (
+                        dyn_url if '/opus/' in dyn_url
+                        else 'https://www.bilibili.com/opus/' + dynamic_id
+                    )
+                    risk_retry = False
+                    while True:
+                        try:
+                            self.backfill_detail(dynamic_id, source_url)
+                            break
+                        except Exception as exc:
+                            if self.is_session_lost_error(exc):
+                                mylogger.warning(
+                                    '重新识别检测到Selenium会话失效，重建会话后重试当前动态：%s',
+                                    dynamic_id
+                                )
+                                self.reset_browser_session()
+                                continue
+                            if not self.is_risk_control_error(exc) or risk_retry:
+                                raise
+                            risk_retry = True
+                            mylogger.error(
+                                '重新识别首次确认 B 站风控，暂停 30 秒后重试当前动态：%s',
+                                dynamic_id
+                            )
+                            time.sleep(30)
+                    detail_row = self.find_dynamic(dynamic_id)
+                    if not detail_row or not detail_row.get('up_id'):
+                        raise RuntimeError('未识别到UP信息')
+                    self.db.cur.execute(
+                        "UPDATE t_draw_dynamic SET status='1', note=%s WHERE dynamic_id=%s",
+                        ('失败动态重新识别成功', dynamic_id)
+                    )
+                    self.db.con.commit()
+                    summary['updated'] += 1
+                except Exception as exc:
+                    summary['failed'] += 1
+                    if self.is_risk_control_error(exc):
+                        summary['paused'] = True
+                        summary['stop_reason'] = 'B站安全风控（错误号 412）'
+                        summary['remaining'] = len(rows) - index - 1
+                        mylogger.error(
+                            '重新识别检测到 B 站风控，立即停止本轮：错误号 412，'
+                            '当前动态=%s，剩余=%s',
+                            dynamic_id or dyn_url,
+                            summary['remaining']
+                        )
+                        break
+                    mylogger.warning(
+                        '重新识别失败动态失败 %s：%s',
+                        dynamic_id or dyn_url,
+                        exc
+                    )
+                finally:
+                    try:
+                        self.bro.get('about:blank')
+                    except Exception:
+                        pass
+                summary['processed'] = index + 1
+            if not summary['paused']:
+                summary['remaining'] = max(
+                    summary['checked'] - summary['processed'], 0
+                )
+            mylogger.info('失败动态重新识别完成：%s', summary)
+            return summary
+        finally:
+            try:
+                self.bro.quit()
+            except Exception:
+                pass
+
+    def is_risk_control_error(self, exc):
+        """识别 B 站 412 风控页或同类拒绝响应。"""
+        error_text = str(exc)
+        evidence = self.get_risk_control_evidence(error_text)
+        if evidence:
+            mylogger.error('重新识别确认 B 站风控特征：%s', evidence)
+            return True
+        try:
+            title = self.bro.title or ''
+            body_text = self.bro.find_element(By.TAG_NAME, 'body').text or ''
+            evidence = self.get_risk_control_evidence(title + '\n' + body_text)
+            if evidence:
+                mylogger.error('重新识别确认 B 站风控特征：%s', evidence)
+            return bool(evidence)
+        except Exception:
+            return False
+
+    @staticmethod
+    def get_risk_control_evidence(text):
+        normalized = re.sub(r'\s+', ' ', str(text or '')).strip().lower()
+        patterns = (
+            ('错误号: 412', r'错误号\s*[:：]\s*412'),
+            ('错误号 412', r'错误号\s+412'),
+            ('安全风控策略', r'触发哔哩哔哩安全风控策略'),
+            ('请求被拒绝', r'该次访问请求被拒绝'),
+            ('security control policy', r'security control policy'),
+            ('request was rejected', r'request was rejected'),
+        )
+        for label, pattern in patterns:
+            if re.search(pattern, normalized):
+                return label
+        return None
 
     def read_personal_forwards(self):
         host_mid = self.get_current_uid()

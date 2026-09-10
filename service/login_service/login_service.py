@@ -1,5 +1,7 @@
 import json
+import os
 from time import sleep
+from pathlib import Path
 from urllib.parse import urlparse
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.wait import WebDriverWait
@@ -47,12 +49,36 @@ class LoginService(object):
         """
         try:
             self.bro.get(globals.home_url)
-            cookie_value = globals.cookie_value
-            cookie = {"domain": ".bilibili.com", "name": "SESSDATA", "path": "/", "sameSite": "Lax", "value": cookie_value}
-            self.bro.add_cookie(cookie)
-            if globals.bili_jct:
-                csrf_cookie = {"domain": ".bilibili.com", "name": "bili_jct", "path": "/", "sameSite": "Lax", "value": globals.bili_jct}
-                self.bro.add_cookie(csrf_cookie)
+            cookie_path = Path(os.getenv("COOKIE_DIR", "./cookie")) / (
+                str(self.my_user_id) + ".json"
+            )
+            if cookie_path.is_file():
+                with cookie_path.open("r", encoding="utf-8") as file:
+                    cookies = json.load(file)
+                for cookie in cookies:
+                    if cookie.get("name") and cookie.get("value"):
+                        self.bro.add_cookie(cookie)
+            else:
+                cookie_value = globals.cookie_value
+                if not cookie_value:
+                    raise Exception("未找到可用 Cookie，请先在管理端登录")
+                cookie = {
+                    "domain": ".bilibili.com",
+                    "name": "SESSDATA",
+                    "path": "/",
+                    "sameSite": "Lax",
+                    "value": cookie_value,
+                }
+                self.bro.add_cookie(cookie)
+                if globals.bili_jct:
+                    csrf_cookie = {
+                        "domain": ".bilibili.com",
+                        "name": "bili_jct",
+                        "path": "/",
+                        "sameSite": "Lax",
+                        "value": globals.bili_jct,
+                    }
+                    self.bro.add_cookie(csrf_cookie)
             self.bro.get("https://t.bilibili.com/")
             random_sleep(start=1, end=2)
             if not self.wait_logged_in():

@@ -4,6 +4,7 @@ services:
     image: mysql:5.7
     container_name: bili-db
     environment:
+      TZ: ${TZ:-Asia/Shanghai}
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
       MYSQL_DATABASE: ${MYSQL_DATABASE:-luckybili}
       MYSQL_USER: ${MYSQL_USER:-luckybili}
@@ -27,13 +28,16 @@ services:
     container_name: bili-selenium
     ports:
       - 5555:4444
+      - "127.0.0.1:7900:7900"
     shm_size: 1g
     mem_limit: 2g
     environment:
+      - TZ=${TZ:-Asia/Shanghai}
       - SE_NODE_MAX_SESSIONS=1
       - SE_NODE_MAX_INSTANCES=1
       - SE_NODE_OVERRIDE_MAX_SESSIONS=true
       - SE_NODE_SESSION_TIMEOUT=120
+      - VNC_NO_PASSWORD=true
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://127.0.0.1:4444/status | grep -q '\"ready\"[[:space:]]*:[[:space:]]*true'"]
       interval: 5s
@@ -50,6 +54,7 @@ services:
       - .:/app
       - ./cookie:/app/cookie
     environment:
+      TZ: ${TZ:-Asia/Shanghai}
       DB_HOST: bili-db
       PORT: 3306
       DRIVER_VERSION: Online
@@ -85,6 +90,7 @@ services:
     ports:
       - "127.0.0.1:8000:8000"
     environment:
+      TZ: ${TZ:-Asia/Shanghai}
       DB_HOST: bili-db
       PORT: 3306
       DRIVER_VERSION: Online

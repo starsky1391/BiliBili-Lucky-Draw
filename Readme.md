@@ -34,27 +34,7 @@ So，如果有个小脚本能够帮助你去看看**今天有哪些Up有抽奖�
 
 ### 1.Clone本项目
 
-### 2.获取B站Cookie
 
-> 苹果Mac电脑参考：[点击这里](https://github.com/BilibiliVideoDownload/BilibiliVideoDownload/wiki/%E8%8E%B7%E5%8F%96SESSDATA)
-
-> window电脑详细方法参考：[点击这里](https://zhuanlan.zhihu.com/p/383171889)
-
-在浏览器进入[B站](https://www.bilibili.com/)，然后登录，随后按照下图获取cookie值
-
-在`.env`文件中，修改相关信息：
-
-![](img/Readme.assets/2024-01-31-15-08-26-image.png)
-
-转发和评论还需要在`.env`中配置登录后的`bili_jct`值；只有`SESSDATA`没有`bili_jct`时，B站接口的`csrf`为空，无法真正发布动态。
-
-### 3.设置Cookie和本机IP
-
-注意：本机IP建议不要填127.0.0.1，而是填写实际IP。
-
-在本项目的.env文件中，将第2步获取的cookie值填入下图位置
-
-![](img/Readme.assets/2024-01-31-17-13-39-image.png)
 
 ### 4.在Docker中分别执行下面两条命令
 
@@ -72,9 +52,11 @@ docker-compose up -d
 
 <u>Tip：如果要停止容器，可以使用命令：`docker-compose down`</u>
 
-### 5.确认是否运行成功
 
-等待docker运行成功后，点击进入 your_ip:5555/ui/sessions，然后点击正在执行的项目，看是否出现如下截图
+
+### **5.打开网站[Bili Draw Console](http://127.0.0.1:8000/)**(本地地址)
+
+
 
 ## IV.TODO && Updated
 
@@ -89,31 +71,3 @@ docker-compose up -d
 - [x] 接入B站UP主每日总结的抽奖动态列表，自动完成对其转发
 
 ---
-
-## Ⅶ.Thanks
-
-**本程序仅用于学习**
-
-**有问题欢迎大家提Issue，有时间我会帮忙解决，也请大佬有好的解决方案在Issue上分享，更加欢迎大家提出PR，成为项目的贡献者。**
-
-如果大家觉得这个项目有点意思，期待给个Star :star:，你的Star :star:是作者更新最大的动力鸭!
-
-<picture>
-  <source
-    media="(prefers-color-scheme: dark)"
-    srcset="
-      https://api.star-history.com/svg?repos=rongchenlin/BiliBili-Lucky-Draw&type=Date&theme=dark
-    "
-  />
-  <source
-    media="(prefers-color-scheme: light)"
-    srcset="
-      https://api.star-history.com/svg?repos=rongchenlin/BiliBili-Lucky-Draw&type=Date
-    "
-  />
-  <img
-    alt="Star History Chart"
-    src="https://api.star-history.com/svg?repos=rongchenlin/BiliBili-Lucky-Draw&type=Date"
-  />
-</picture>
-

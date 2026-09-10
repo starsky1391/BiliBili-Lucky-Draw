@@ -130,8 +130,21 @@ class SearchDynamicByUps(object):
 
         links = self.extract_links_from_current_page(bro)
         detail_urls = self.extract_detail_urls_from_cards(cards)
+        existing_seen = False
+        remaining_after_existing = 0
         for detail_url in detail_urls:
             detail_url = self.normalize_dynamic_url(detail_url)
+            if existing_seen:
+                if remaining_after_existing <= 0:
+                    mylogger.info('已读取已扫描动态后的2条记录，停止当前UP：' + str(base_url))
+                    break
+                remaining_after_existing -= 1
+            elif self.scan_cache_dao.has_success('detail', detail_url):
+                existing_seen = True
+                remaining_after_existing = 2
+                self.scan_cache_skip_count = self.scan_cache_skip_count + 1
+                mylogger.info('详情页已扫描，跳过：' + str(detail_url))
+                continue
             if not self.should_scan_detail_page(detail_url):
                 continue
             detail_links = self.extract_links_from_detail_page(bro, detail_url)
@@ -253,10 +266,12 @@ class SearchDynamicByUps(object):
                 + ";  "
             )
             self.statistics_dao.insert("", "搜索到的抽奖动态条数为: " + str(self.count), self.search_note)
-        except:
+        except Exception:
             mylogger.error("[搜索抽奖动态列表主流程 出错]")
+            raise
         finally:
-            bro.quit()
+            if bro is not None:
+                bro.quit()
 
 
 if __name__ == '__main__':

@@ -47,6 +47,7 @@ class DynamicShareBase(object):
         self.lottery_time = None
         self.publish_time = None
         self.current_user_name = None
+        self.last_error = None
 
     def share_one(self, bro, chains, lucky_dynamic_url, share_content, comment_content):
         """
@@ -92,12 +93,37 @@ class DynamicShareBase(object):
             self.share_status = 0
             self.status = 0
         except Exception as e:
+            self.last_error = str(e)
+            try:
+                body_text = bro.find_element(By.TAG_NAME, "body").text or ""
+                title = bro.title or ""
+                evidence = self.get_risk_control_evidence(title + "\n" + body_text)
+                if evidence:
+                    self.last_error += " B站安全风控（错误号 412，特征：" + evidence + "）"
+            except Exception:
+                pass
             mylogger.error("share_one 转发单条动态主流程 出错url : " + lucky_dynamic_url)
             mylogger.error("[share_one 出错原因为：%s]" % e, exc_info=True)
         finally:
             self.share_time = str(datetime.now())
             self.machine_ip = get_host_ip()
             mylogger.info('单条动态转发--执行结束')
+
+    @staticmethod
+    def get_risk_control_evidence(text):
+        normalized = re.sub(r"\s+", " ", str(text or "")).strip().lower()
+        patterns = (
+            ("错误号: 412", r"错误号\s*[:：]\s*412"),
+            ("错误号 412", r"错误号\s+412"),
+            ("安全风控策略", r"触发哔哩哔哩安全风控策略"),
+            ("请求被拒绝", r"该次访问请求被拒绝"),
+            ("security control policy", r"security control policy"),
+            ("request was rejected", r"request was rejected"),
+        )
+        for label, pattern in patterns:
+            if re.search(pattern, normalized):
+                return label
+        return None
 
     def wait_page_ready(self, bro, timeout=20):
         WebDriverWait(bro, timeout).until(EC.presence_of_element_located((By.CSS_SELECTOR, 'body')))

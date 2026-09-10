@@ -49,7 +49,7 @@ class AuthSessionDao:
             account_key.replace("'", "''"), status, uid_value,
             "'%s'" % now if verified else "NULL",
             "'%s'" % now if cookie_saved else "NULL",
-            error_value, verified_sql, cookie_sql, now
+            error_value, now, verified_sql, cookie_sql
         )
         self.db.executeCommit(sql)
 

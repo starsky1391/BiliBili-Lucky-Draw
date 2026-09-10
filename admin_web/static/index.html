@@ -29,16 +29,18 @@
           <article class="metric"><span>收集任务</span><strong id="collectValue">--</strong><small>每 3 小时</small></article>
           <article class="metric"><span>清理任务</span><strong id="cleanupValue">--</strong><small>每天一次</small></article>
           <article class="metric warning"><span>失败动态</span><strong id="failureCount">--</strong><small>需要处理的记录</small></article>
+          <article class="metric"><span>未开奖动态</span><strong id="pendingDrawCount">--</strong><small>status = 1，尚未到开奖时间</small></article>
+          <article class="metric"><span>已过期动态</span><strong id="expiredDrawCount">--</strong><small>status = 1，已到开奖时间</small></article>
         </div>
         <div class="panel"><div class="panel-title"><h3>系统提示</h3><span id="systemNote">正在读取</span></div><p id="overviewNote">--</p></div>
       </div>
       <div id="dynamics" class="tab">
-        <div class="section-head"><div><p class="kicker">ATTENTION QUEUE</p><h2>失败动态</h2></div><button class="icon-button" id="refreshFailures" title="刷新失败动态">↻</button></div>
+        <div class="section-head"><div><p class="kicker">ATTENTION QUEUE</p><h2>失败动态</h2></div><div class="section-actions"><button class="secondary" id="retryFailures">全部重新识别</button><button class="secondary" id="markAllMissing">全部标记页面丢失</button><button class="icon-button" id="refreshFailures" title="刷新失败动态">↻</button></div></div>
         <div id="failureList" class="failure-list"></div>
         <details class="fold"><summary>成功、跳过、已清理记录</summary><p>正常记录已折叠。数据库仍保留完整状态，可继续通过接口扩展筛选。</p></details>
       </div>
       <div id="logs" class="tab">
-        <div class="section-head"><div><p class="kicker">TRACE</p><h2>运行日志</h2></div><button class="icon-button" id="refreshLogs" title="刷新日志">↻</button></div>
+        <div class="section-head"><div><p class="kicker">TRACE</p><h2>运行日志</h2></div><div class="section-actions"><select id="logLimit" title="日志显示范围"><option value="100">最近 100 行</option><option value="200" selected>最近 200 行</option><option value="500">最近 500 行</option></select><label class="check"><input type="checkbox" id="logErrorsOnly"> 仅错误</label><button class="icon-button" id="refreshLogs" title="刷新日志">↻</button></div></div>
         <pre id="logBox" class="log-box">正在读取日志...</pre>
       </div>
       <div id="settings" class="tab">
@@ -47,8 +49,8 @@
           <div class="panel">
             <h3>B 站登录</h3>
             <p id="settingsStatus">检查中</p>
-            <button id="startLogin" class="primary">扫码登录</button>
-            <div id="qrWrap" class="qr-wrap hidden"><img id="qrImage" alt="B站登录二维码"><p>请使用 B 站客户端扫码，登录成功后任务会自动恢复。</p></div>
+            <button id="startLogin" class="primary">打开 B 站登录页</button>
+            <p class="hint">登录页会在弹窗中打开，扫码成功后任务自动恢复。</p>
           </div>
           <div class="panel">
             <h3>安全边界</h3>
@@ -58,6 +60,20 @@
       </div>
     </section>
   </main>
-  <script src="/assets/app.js"></script>
+  <div id="loginModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="loginTitle">
+    <div class="modal-backdrop"></div>
+    <div class="modal-card">
+      <div class="modal-head">
+        <div><p class="kicker">BILIBILI AUTH</p><h3 id="loginTitle">登录 B 站</h3></div>
+        <div class="modal-actions"><button id="refreshLogin" class="secondary">刷新登录页</button><button id="closeLogin" class="icon-button" title="关闭登录窗口">×</button></div>
+      </div>
+      <div class="browser-frame">
+        <iframe id="browserView" title="B站登录页面" src="about:blank" allow="clipboard-read; clipboard-write"></iframe>
+        <div id="browserLoading" class="browser-loading">正在打开 B 站登录页...</div>
+      </div>
+      <div class="modal-foot"><span id="loginHint">请在窗口中的 B 站页面完成登录。</span><span id="loginState">等待登录</span></div>
+    </div>
+  </div>
+  <script src="/assets/app.js?v=20260910-7"></script>
 </body>
 </html>

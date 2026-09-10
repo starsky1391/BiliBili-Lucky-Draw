@@ -6,13 +6,14 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
 from selenium.webdriver.common.by import By
 
 from dao.auth_session_dao import AuthSessionDao
 from dao.init_db import init_db
 from service.login_service.login_service import LoginService
+from service.cleanup_service.backfill_account_dynamics import AccountDynamicBackfill
 from utils import globals
 from utils.webdriver_util import init_webdriver
 
@@ -21,7 +22,14 @@ ROOT = Path(__file__).resolve().parent
 COOKIE_DIR = Path(os.getenv("COOKIE_DIR", "/app/cookie"))
 ACCOUNT_KEY = str(globals.my_user_id or "default")
 login_lock = threading.Lock()
-login_state = {"driver": None, "chains": None, "started_at": None, "error": None}
+login_state = {
+    "driver": None,
+    "chains": None,
+    "started_at": None,
+    "error": None,
+    "thread": None,
+}
+retry_state = {"running": False, "summary": None, "thread": None}
 
 
 def auth_dao():
@@ -93,6 +101,7 @@ def close_login_driver():
     driver = login_state.get("driver")
     login_state["driver"] = None
     login_state["chains"] = None
+    login_state["thread"] = None
     if driver is not None:
         try:
             driver.quit()
@@ -100,12 +109,16 @@ def close_login_driver():
             pass
 
 
-def login_worker():
+def vnc_url():
+    driver = login_state.get("driver")
+    session_id = getattr(driver, "session_id", None) if driver else None
+    if not session_id:
+        return None
+    return "http://127.0.0.1:7900/vnc.html?autoconnect=true&host=127.0.0.1&port=5555&path=session/%s/se/vnc&resize=scale" % session_id
+
+
+def login_worker(driver, chains):
     try:
-        driver, chains = init_webdriver()
-        login_state["driver"] = driver
-        login_state["chains"] = chains
-        driver.get("https://passport.bilibili.com/login")
         deadline = time.time() + 300
         while time.time() < deadline:
             uid = find_login_uid(driver)
@@ -116,12 +129,39 @@ def login_worker():
                     raise RuntimeError("扫码完成，但 B 站登录状态验证失败")
                 set_auth("AUTHENTICATED", uid=uid, verified=True, cookie_saved=True)
                 return
+            # Selenium removes idle sessions after SE_NODE_SESSION_TIMEOUT.
+            driver.execute_script("return document.readyState")
             time.sleep(2)
         set_auth("LOGIN_FAILED", error="二维码登录超时")
     except Exception as exc:
         set_auth("LOGIN_FAILED", error=str(exc))
     finally:
         close_login_driver()
+
+
+def start_login_session():
+    with login_lock:
+        current = login_state.get("driver")
+        if current is not None and getattr(current, "session_id", None):
+            return current
+        close_login_driver()
+        driver, chains = init_webdriver()
+        driver.get("https://passport.bilibili.com/login")
+        if not getattr(driver, "session_id", None):
+            driver.quit()
+            raise RuntimeError("Selenium 登录会话创建失败")
+        login_state["driver"] = driver
+        login_state["chains"] = chains
+        login_state["started_at"] = datetime.now().isoformat(timespec="seconds")
+        login_state["error"] = None
+        worker = threading.Thread(
+            target=login_worker,
+            args=(driver, chains),
+            daemon=True,
+        )
+        login_state["thread"] = worker
+        worker.start()
+        return driver
 
 
 @app.get("/")
@@ -144,13 +184,20 @@ def auth_status():
 
 @app.post("/api/auth/qrcode/start")
 def start_qrcode():
-    if login_state["driver"] is not None:
-        return {"started": True, "status": "LOGIN_IN_PROGRESS"}
-    set_auth("LOGIN_IN_PROGRESS", error=None)
-    login_state["started_at"] = datetime.now().isoformat(timespec="seconds")
-    login_state["error"] = None
-    threading.Thread(target=login_worker, daemon=True).start()
-    return {"started": True, "status": "LOGIN_IN_PROGRESS"}
+    try:
+        set_auth("LOGIN_IN_PROGRESS", error=None)
+        driver = start_login_session()
+        return {
+            "started": True,
+            "status": "LOGIN_IN_PROGRESS",
+            "session_id": driver.session_id,
+            "vnc_url": vnc_url(),
+        }
+    except Exception as exc:
+        login_state["error"] = str(exc)
+        set_auth("LOGIN_FAILED", error=str(exc))
+        close_login_driver()
+        raise HTTPException(status_code=503, detail="登录会话创建失败")
 
 
 @app.get("/api/auth/qrcode/image")
@@ -165,16 +212,78 @@ def qrcode_image():
     return {"ready": True, "image": "data:image/png;base64," + base64.b64encode(png).decode()}
 
 
+@app.get("/api/auth/vnc")
+def auth_vnc():
+    return {"ready": vnc_url() is not None, "url": vnc_url()}
+
+
+def retry_failed_worker():
+    try:
+        retry_state["summary"] = AccountDynamicBackfill(ACCOUNT_KEY).retry_failed_dynamics()
+    except Exception as exc:
+        retry_state["summary"] = {
+            "checked": 0,
+            "updated": 0,
+            "failed": 0,
+            "error": str(exc),
+        }
+    finally:
+        retry_state["running"] = False
+
+
+@app.get("/api/dynamics/retry-status")
+def retry_status():
+    return {
+        "running": retry_state["running"],
+        "summary": retry_state["summary"],
+    }
+
+
+@app.post("/api/dynamics/retry-failures")
+def retry_failures():
+    if retry_state["running"]:
+        return {"started": False, "running": True}
+    retry_state["running"] = True
+    retry_state["summary"] = None
+    worker = threading.Thread(target=retry_failed_worker, daemon=True)
+    retry_state["thread"] = worker
+    worker.start()
+    return {"started": True, "running": True}
+
+
+@app.post("/api/auth/refresh")
+def refresh_auth_page():
+    driver = login_state.get("driver")
+    if driver is None:
+        try:
+            set_auth("LOGIN_IN_PROGRESS", error=None)
+            driver = start_login_session()
+        except Exception:
+            raise HTTPException(status_code=503, detail="登录会话创建失败，请稍后重试")
+    driver.refresh()
+    return {"refreshed": True, "vnc_url": vnc_url()}
+
+
 @app.get("/api/overview")
 def overview():
     db = init_db()
     failure_rows = db.executeSql(
         "SELECT COUNT(*) AS count FROM t_draw_dynamic WHERE status='3'"
     ) or [{"count": 0}]
+    pending_rows = db.executeSql(
+        "SELECT COUNT(*) AS count FROM t_draw_dynamic "
+        "WHERE status='1' AND lottery_time IS NOT NULL AND lottery_time > NOW()"
+    ) or [{"count": 0}]
+    expired_rows = db.executeSql(
+        "SELECT COUNT(*) AS count FROM t_draw_dynamic "
+        "WHERE status='1' AND lottery_time IS NOT NULL AND lottery_time <= NOW()"
+    ) or [{"count": 0}]
     return {
         "auth": public_auth(),
         "selenium": "connected",
         "failures": int(failure_rows[0].get("count") or 0),
+        "pending_draws": int(pending_rows[0].get("count") or 0),
+        "expired_draws": int(expired_rows[0].get("count") or 0),
         "tasks": {
             "collect": (
                 "scheduled" if public_auth()["status"] == "AUTHENTICATED"
@@ -204,6 +313,38 @@ def failures():
     return {"items": rows}
 
 
+@app.post("/api/dynamics/{dynamic_id}/mark-missing")
+def mark_dynamic_missing(dynamic_id: str):
+    db = init_db()
+    value = dynamic_id.replace("'", "''")
+    rows = db.executeSql(
+        "SELECT dynamic_id FROM t_draw_dynamic "
+        "WHERE dynamic_id='%s' AND status='3' LIMIT 1" % value
+    ) or []
+    if not rows:
+        raise HTTPException(status_code=404, detail="dynamic not found")
+    db.executeCommit(
+        "UPDATE t_draw_dynamic SET status='4', note='人工标记页面丢失' "
+        "WHERE dynamic_id='%s'" % value
+    )
+    return {"marked": True, "dynamic_id": dynamic_id, "status": "4"}
+
+
+@app.post("/api/dynamics/mark-all-missing")
+def mark_all_dynamics_missing():
+    db = init_db()
+    rows = db.executeSql(
+        "SELECT COUNT(*) AS count FROM t_draw_dynamic WHERE status='3'"
+    ) or [{"count": 0}]
+    count = int(rows[0].get("count") or 0)
+    if count:
+        db.executeCommit(
+            "UPDATE t_draw_dynamic SET status='4', note='人工批量标记页面丢失' "
+            "WHERE status='3'"
+        )
+    return {"marked": count, "status": "4"}
+
+
 @app.get("/api/dynamics/{dynamic_id}")
 def dynamic_detail(dynamic_id: str):
     db = init_db()
@@ -217,13 +358,27 @@ def dynamic_detail(dynamic_id: str):
 
 
 @app.get("/api/logs")
-def logs():
+def logs(
+    limit: int = Query(200, ge=100, le=500),
+    errors_only: bool = Query(False),
+):
     log_dir = Path("/app/Log")
     files = sorted(log_dir.glob("*.log"), key=lambda p: p.stat().st_mtime, reverse=True)
-    lines = []
-    for path in files[:5]:
-        try:
-            lines.extend(path.read_text(encoding="utf-8", errors="replace").splitlines()[-80:])
-        except OSError:
-            continue
-    return {"items": lines[-300:]}
+    if not files:
+        return {"items": [], "file": None, "limit": limit, "errors_only": errors_only}
+    path = files[0]
+    try:
+        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        lines = []
+    if errors_only:
+        lines = [
+            line for line in lines
+            if " - ERROR - " in line or " - CRITICAL - " in line
+        ]
+    return {
+        "items": lines[-limit:],
+        "file": path.name,
+        "limit": limit,
+        "errors_only": errors_only,
+    }
