@@ -1,4 +1,6 @@
+import re
 import time
+from datetime import datetime, timedelta
 
 from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.common.by import By
@@ -75,15 +77,87 @@ class SearchDynamicByUps(object):
             self.append_unique_link(links, element.get_attribute('data-url'))
         return links
 
-    def extract_detail_urls_from_cards(self, cards):
-        detail_urls = []
+    def extract_detail_entries_from_cards(self, bro, cards):
+        detail_entries = []
         for card in cards:
             card_text = card.text or ''
             if '投稿了文章' not in card_text and '抽奖' not in card_text and '福利' not in card_text:
                 continue
+            publish_time = self.extract_publish_time_from_card(bro, card)
             for element in card.find_elements(By.CSS_SELECTOR, '[data-url*="/opus/"], [data-url*="t.bilibili.com/"]'):
-                self.append_unique_link(detail_urls, element.get_attribute('data-url'))
-        return detail_urls
+                url = self.normalize_dynamic_url(element.get_attribute('data-url'))
+                if not url or any(item['url'] == url for item in detail_entries):
+                    continue
+                detail_entries.append({'url': url, 'publish_time': publish_time})
+        return detail_entries
+
+    def extract_publish_time_from_card(self, bro, card):
+        values = bro.execute_script("""
+const card = arguments[0];
+const values = [];
+const nodes = [card].concat(Array.from(card.querySelectorAll('*')));
+for (const node of nodes) {
+  for (const attr of Array.from(node.attributes || [])) {
+    const value = String(attr.value || '').trim();
+    if (/(time|date|pub|timestamp)/i.test(attr.name) || /^\\d{10,13}$/.test(value)) {
+      values.push(value);
+    }
+  }
+  if (node.tagName === 'TIME' || /time|date/i.test(String(node.className || ''))) {
+    const text = String(node.innerText || node.textContent || '').trim();
+    if (text) values.push(text);
+  }
+}
+return values;
+""", card) or []
+        values.append(card.text or '')
+        now = datetime.now()
+        for value in values:
+            parsed = self.parse_card_time(value, now)
+            if parsed is not None:
+                return parsed
+        return None
+
+    @staticmethod
+    def parse_card_time(value, now):
+        text = re.sub(r'\s+', ' ', str(value or '')).strip()
+        if not text:
+            return None
+        if re.fullmatch(r'\d{10,13}', text):
+            timestamp = int(text)
+            if len(text) == 13:
+                timestamp //= 1000
+            try:
+                return datetime.fromtimestamp(timestamp)
+            except (OverflowError, OSError, ValueError):
+                return None
+        match = re.search(r'(20\d{2})[-/.年](\d{1,2})[-/.月](\d{1,2})日?(?:\s+|T)(\d{1,2}):(\d{2})', text)
+        if match:
+            return datetime(*[int(value) for value in match.groups()])
+        match = re.search(r'(?<!\d)(\d{1,2})月(\d{1,2})日?(?:\s+|T)(\d{1,2}):(\d{2})', text)
+        if match:
+            month, day, hour, minute = map(int, match.groups())
+            try:
+                return datetime(now.year, month, day, hour, minute)
+            except ValueError:
+                return None
+        match = re.search(r'(?<!\d)(\d{1,2})[-/](\d{1,2})(?:\s+|T)(\d{1,2}):(\d{2})', text)
+        if match:
+            month, day, hour, minute = map(int, match.groups())
+            try:
+                return datetime(now.year, month, day, hour, minute)
+            except ValueError:
+                return None
+        match = re.search(r'昨天\s*(\d{1,2}):(\d{2})', text)
+        if match:
+            hour, minute = map(int, match.groups())
+            return (now - timedelta(days=1)).replace(hour=hour, minute=minute, second=0, microsecond=0)
+        match = re.search(r'(\d+)\s*分钟前', text)
+        if match:
+            return now - timedelta(minutes=int(match.group(1)))
+        if '刚刚' in text:
+            return now
+        return None
 
     def extract_links_from_detail_page(self, bro, detail_url):
         try:
@@ -129,22 +203,17 @@ class SearchDynamicByUps(object):
             return
 
         links = self.extract_links_from_current_page(bro)
-        detail_urls = self.extract_detail_urls_from_cards(cards)
-        existing_seen = False
-        remaining_after_existing = 0
-        for detail_url in detail_urls:
-            detail_url = self.normalize_dynamic_url(detail_url)
-            if existing_seen:
-                if remaining_after_existing <= 0:
-                    mylogger.info('已读取已扫描动态后的2条记录，停止当前UP：' + str(base_url))
-                    break
-                remaining_after_existing -= 1
-            elif self.scan_cache_dao.has_success('detail', detail_url):
-                existing_seen = True
-                remaining_after_existing = 2
-                self.scan_cache_skip_count = self.scan_cache_skip_count + 1
-                mylogger.info('详情页已扫描，跳过：' + str(detail_url))
-                continue
+        detail_entries = self.extract_detail_entries_from_cards(bro, cards)
+        cutoff_time = datetime.now() - timedelta(days=365)
+        for entry in detail_entries:
+            detail_url = entry['url']
+            publish_time = entry['publish_time']
+            if publish_time is not None and publish_time < cutoff_time:
+                mylogger.info(
+                    '动态发布时间早于过去一年，停止当前UP扫描：%s，发布时间=%s，边界=%s',
+                    detail_url, publish_time, cutoff_time
+                )
+                break
             if not self.should_scan_detail_page(detail_url):
                 continue
             detail_links = self.extract_links_from_detail_page(bro, detail_url)
