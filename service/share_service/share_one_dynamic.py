@@ -45,6 +45,7 @@ class DynamicShareBase(object):
         self.user_id = None
         self.expire_date = None
         self.lottery_time = None
+        self.lottery_source = None
         self.publish_time = None
         self.current_user_name = None
         self.last_error = None
@@ -282,17 +283,32 @@ fetch('https://api.bilibili.com/x/polymer/web-dynamic/v1/detail?id=' + encodeURI
         if publish_ts is not None:
             self.publish_time = datetime.fromtimestamp(publish_ts)
 
+        candidates = []
         if lottery_end_ts is not None:
-            self.lottery_time = datetime.fromtimestamp(lottery_end_ts)
-            return
+            candidate = datetime.fromtimestamp(lottery_end_ts)
+            if self.publish_time is None or candidate > self.publish_time:
+                candidates.append(candidate)
+            elif candidate <= self.publish_time:
+                mylogger.warning(
+                    "开奖接口时间不晚于动态发布时间，忽略接口时间：开奖=%s，发布=%s",
+                    candidate, self.publish_time
+                )
 
-        text_date = self.parse_expire_date(self.get_dynamic_text(bro))
+        text_date = self.parse_expire_date(
+            self.get_dynamic_text(bro),
+            self.publish_time
+        )
         if text_date is not None:
-            self.lottery_time = datetime.combine(text_date, datetime_time(23, 59, 59))
+            candidates.append(text_date)
+
+        if candidates:
+            self.lottery_time = max(candidates)
+            self.lottery_source = 'explicit'
             return
 
         if self.publish_time is not None:
             self.lottery_time = self.publish_time + timedelta(days=120)
+            self.lottery_source = 'fallback_120d'
             mylogger.info("未找到明确开奖时间，使用动态发布时间+120天：%s" % self.lottery_time)
         else:
             mylogger.warning("未获取到动态发布时间，无法计算120天保底时间")
@@ -379,38 +395,170 @@ Promise.all([
             texts.append((body.get_attribute('innerText') or body.text or '').strip())
         return "\n".join(texts)
 
-    def parse_expire_date(self, text):
-        keyword_pattern = (
+    def parse_expire_date(self, text, publish_time=None):
+        primary_keyword_pattern = (
             r'(开奖|开獎|抽奖结果|抽獎結果|中奖名单|中獎名單|公布名单|公布名單|'
-            r'公布结果|公布結果|截止|截至|报名截止|報名截止|参与截止|參與截止|'
+            r'公布结果|公布結果)'
+        )
+        secondary_keyword_pattern = (
+            r'(截止|截至|报名截止|報名截止|参与截止|參與截止|'
             r'结束时间|結束時間|结束|結束)'
         )
         keyword_candidates = []
+        secondary_candidates = []
         all_dates = []
         current_year = date.today().year
-        for match in re.finditer(
-                r'((?:20\d{2})年)?(\d{1,2})月(\d{1,2})[日号]?', text):
+        date_pattern = r'((?:20\d{2})年)?(\d{1,2})月(\d{1,2})[日号]?'
+        for match in re.finditer(date_pattern, text):
             year = int(match.group(1)[:-1]) if match.group(1) else current_year
-            self.append_valid_date(all_dates, year, int(match.group(2)), int(match.group(3)))
+            parsed = self.parse_date_time_nearby(
+                text, match.start(), match.end(), year,
+                int(match.group(2)), int(match.group(3))
+            )
+            if parsed is not None:
+                all_dates.append(parsed)
         for match in re.finditer(r'(?<!\d)(\d{1,2})[./](\d{1,2})(?!\d)', text):
-            self.append_valid_date(all_dates, current_year, int(match.group(1)), int(match.group(2)))
-        for keyword in re.finditer(keyword_pattern, text, re.IGNORECASE):
+            parsed = self.parse_date_time_nearby(
+                text, match.start(), match.end(), current_year,
+                int(match.group(1)), int(match.group(2))
+            )
+            if parsed is not None:
+                all_dates.append(parsed)
+        for match in re.finditer(r'(\d{1,2})月(?:中旬?|底|末)', text):
+            month = int(match.group(1))
+            year = current_year
+            try:
+                vague_date = date(year + (1 if month == 12 else 0), month % 12 + 1, 1)
+                all_dates.append(datetime.combine(vague_date, datetime_time.min))
+            except ValueError:
+                pass
+        chinese_months = {
+            '一': 1, '二': 2, '三': 3, '四': 4, '五': 5, '六': 6,
+            '七': 7, '八': 8, '九': 9, '十': 10, '十一': 11, '十二': 12,
+        }
+        for match in re.finditer(r'([一二三四五六七八九十]+)月(?:中旬?|底|末)', text):
+            month = chinese_months.get(match.group(1))
+            if month is None:
+                continue
+            year = current_year + (1 if month == 12 else 0)
+            vague_date = date(year, month % 12 + 1, 1)
+            all_dates.append(datetime.combine(vague_date, datetime_time.min))
+
+        all_dates = self.filter_lottery_candidates(all_dates, publish_time)
+        keyword_matches = []
+        keyword_matches.extend(
+            (match, True)
+            for match in re.finditer(primary_keyword_pattern, text, re.IGNORECASE)
+        )
+        keyword_matches.extend(
+            (match, False)
+            for match in re.finditer(secondary_keyword_pattern, text, re.IGNORECASE)
+        )
+        for keyword, is_primary in keyword_matches:
             start = max(0, keyword.start() - 40)
             end = min(len(text), keyword.end() + 60)
             context = text[start:end]
-            for match in re.finditer(
-                    r'((?:20\d{2})年)?(\d{1,2})月(\d{1,2})[日号]?', context):
+            preceding_candidates = []
+            following_candidates = []
+            for match in re.finditer(date_pattern, context):
                 year = int(match.group(1)[:-1]) if match.group(1) else current_year
-                self.append_valid_date(
-                    keyword_candidates, year, int(match.group(2)), int(match.group(3)))
+                parsed = self.parse_date_time_nearby(
+                    context, match.start(), match.end(), year,
+                    int(match.group(2)), int(match.group(3))
+                )
+                if parsed is not None:
+                    absolute_start = start + match.start()
+                    target = preceding_candidates if absolute_start < keyword.start() else following_candidates
+                    target.append((abs(absolute_start - keyword.start()), parsed))
             for match in re.finditer(r'(?<!\d)(\d{1,2})[./](\d{1,2})(?!\d)', context):
-                self.append_valid_date(
-                    keyword_candidates, current_year, int(match.group(1)), int(match.group(2)))
+                parsed = self.parse_date_time_nearby(
+                    context, match.start(), match.end(), current_year,
+                    int(match.group(1)), int(match.group(2))
+                )
+                if parsed is not None:
+                    absolute_start = start + match.start()
+                    target = preceding_candidates if absolute_start < keyword.start() else following_candidates
+                    target.append((abs(absolute_start - keyword.start()), parsed))
+            for match in re.finditer(r'(\d{1,2})月(?:中旬?|底|末)', context):
+                month = int(match.group(1))
+                year = current_year + (1 if month == 12 else 0)
+                vague_date = date(year, month % 12 + 1, 1)
+                absolute_start = start + match.start()
+                target = preceding_candidates if absolute_start < keyword.start() else following_candidates
+                target.append((
+                    abs((start + match.start()) - keyword.start()),
+                    datetime.combine(vague_date, datetime_time.min)
+                ))
+            for match in re.finditer(r'([一二三四五六七八九十]+)月(?:中旬?|底|末)', context):
+                month = chinese_months.get(match.group(1))
+                if month is None:
+                    continue
+                year = current_year + (1 if month == 12 else 0)
+                vague_date = date(year, month % 12 + 1, 1)
+                absolute_start = start + match.start()
+                target = preceding_candidates if absolute_start < keyword.start() else following_candidates
+                target.append((
+                    abs((start + match.start()) - keyword.start()),
+                    datetime.combine(vague_date, datetime_time.min)
+                ))
+            context_candidates = preceding_candidates or following_candidates
+            if context_candidates:
+                target = min(context_candidates, key=lambda item: item[0])[1]
+                (keyword_candidates if is_primary else secondary_candidates).append(target)
+        keyword_candidates = self.filter_lottery_candidates(
+            keyword_candidates, publish_time
+        )
         if keyword_candidates:
             return max(keyword_candidates)
-        if all_dates:
+        if secondary_candidates:
+            secondary_candidates = self.filter_lottery_candidates(
+                secondary_candidates, publish_time
+            )
+            if secondary_candidates:
+                return max(secondary_candidates)
+        # 没有任何开奖语义时，普通日期可能是活动开始、发货或其他时间，
+        # 不能直接当作开奖时间；有开奖语义但日期不在关键词附近时，才允许全局兜底。
+        if keyword_matches and all_dates:
             return max(all_dates)
         return None
+
+    @staticmethod
+    def filter_lottery_candidates(candidates, publish_time):
+        if publish_time is None:
+            return candidates
+        return [candidate for candidate in candidates if candidate > publish_time]
+
+    @staticmethod
+    def parse_date_time_nearby(text, start, end, year, month, day):
+        try:
+            base = date(year, month, day)
+        except ValueError:
+            return None
+        nearby = text[end:min(len(text), end + 20)]
+        time_match = re.search(
+            r'(上午|下午|晚上|凌晨|中午)?\s*(\d{1,2})(?::(\d{2}))?\s*点半?',
+            nearby
+        )
+        if not time_match:
+            time_match = re.search(
+                r'(上午|下午|晚上|凌晨|中午)?\s*(\d{1,2}):(\d{2})',
+                nearby
+            )
+        if not time_match:
+            return datetime.combine(base, datetime_time(23, 59, 59))
+        period = time_match.group(1) or ''
+        hour = int(time_match.group(2))
+        minute = int(time_match.group(3) or 0)
+        if '下午' in period or '晚上' in period:
+            if hour < 12:
+                hour += 12
+        elif '凌晨' in period and hour == 12:
+            hour = 0
+        if '半' in time_match.group(0):
+            minute = 30
+        if hour > 23 or minute > 59:
+            return None
+        return datetime.combine(base, datetime_time(hour, minute, 0))
 
     def append_valid_date(self, dates, year, month, day):
         try:

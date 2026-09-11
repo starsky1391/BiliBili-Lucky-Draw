@@ -39,7 +39,7 @@ services:
       - SE_NODE_SESSION_TIMEOUT=120
       - VNC_NO_PASSWORD=true
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:4444/status | grep -q '\"ready\"[[:space:]]*:[[:space:]]*true'"]
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:4444/status | grep -q '\"availability\"[[:space:]]*:[[:space:]]*\"UP\"'"]
       interval: 5s
       timeout: 3s
       retries: 20
@@ -56,7 +56,24 @@ services:
     environment:
       TZ: ${TZ:-Asia/Shanghai}
       DB_HOST: bili-db
-      PORT: 3306
+      PORT: ${APP_DB_PORT:-3306}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-luckybili}
+      MYSQL_USER: ${MYSQL_USER:-luckybili}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      home_url: ${home_url:-https://www.bilibili.com/}
+      my_user_id: ${my_user_id:-test_id}
+      ignore_link: ${ignore_link:-}
+      multi_users: ${multi_users:-test_id}
+      do_type: ${do_type:-single}
+      is_remove: ${is_remove:-N}
+      remove_cnt: ${remove_cnt:-50}
+      cookie_value: ${cookie_value:-}
+      bili_jct: ${bili_jct:-}
+      notify_switch: ${notify_switch:-N}
+      FangTang_KEY: ${FangTang_KEY:-}
+      share_content: ${share_content:-抽奖啦!}
+      comment_content: ${comment_content:-参与一下}
+      ups: ${ups:-}
       DRIVER_VERSION: Online
       SELENIUM_HOST: bili-selenium
       SELENIUM_PORT: 4444
@@ -92,7 +109,24 @@ services:
     environment:
       TZ: ${TZ:-Asia/Shanghai}
       DB_HOST: bili-db
-      PORT: 3306
+      PORT: ${APP_DB_PORT:-3306}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-luckybili}
+      MYSQL_USER: ${MYSQL_USER:-luckybili}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      home_url: ${home_url:-https://www.bilibili.com/}
+      my_user_id: ${my_user_id:-test_id}
+      ignore_link: ${ignore_link:-}
+      multi_users: ${multi_users:-test_id}
+      do_type: ${do_type:-single}
+      is_remove: ${is_remove:-N}
+      remove_cnt: ${remove_cnt:-50}
+      cookie_value: ${cookie_value:-}
+      bili_jct: ${bili_jct:-}
+      notify_switch: ${notify_switch:-N}
+      FangTang_KEY: ${FangTang_KEY:-}
+      share_content: ${share_content:-抽奖啦!}
+      comment_content: ${comment_content:-参与一下}
+      ups: ${ups:-}
       DRIVER_VERSION: Online
       SELENIUM_HOST: bili-selenium
       SELENIUM_PORT: 4444

@@ -14,8 +14,18 @@ from dao.auth_session_dao import AuthSessionDao
 from dao.init_db import init_db
 from service.login_service.login_service import LoginService
 from service.cleanup_service.backfill_account_dynamics import AccountDynamicBackfill
+from service.search_draw_dynamic_service.SearchDynamicByUps import SearchDynamicByUps
+from service.share_service.multi_users_share import MultiUsersShareService
+from service.cleanup_service.expired_share_cleanup import ExpiredShareCleanup
+from service.auth_service import require_authenticated
 from utils import globals
-from utils.runtime_settings import VALID_CLEANUP_MODES, get_cleanup_mode, set_cleanup_mode
+from utils.runtime_settings import (
+    VALID_CLEANUP_MODES,
+    get_cleanup_mode,
+    get_max_checks,
+    set_cleanup_mode,
+    set_max_checks,
+)
 from utils.webdriver_util import init_webdriver
 
 app = FastAPI(title="Bilibili Lucky Draw Console")
@@ -31,6 +41,13 @@ login_state = {
     "thread": None,
 }
 retry_state = {"running": False, "summary": None, "thread": None}
+manual_task_state = {
+    "collect": {"running": False, "summary": None, "error": None},
+    "cleanup": {"running": False, "summary": None, "error": None},
+    "reidentify_expired": {"running": False, "summary": None, "error": None},
+    "reidentify_one": {"running": False, "summary": None, "error": None},
+}
+manual_task_lock = threading.Lock()
 
 
 def auth_dao():
@@ -204,6 +221,20 @@ def update_cleanup_settings(payload: dict):
     return {"mode": set_cleanup_mode(mode)}
 
 
+@app.get("/api/settings/max-checks")
+def max_checks_settings():
+    return {"max_checks": get_max_checks()}
+
+
+@app.post("/api/settings/max-checks")
+def update_max_checks_settings(payload: dict):
+    try:
+        value = set_max_checks(payload.get("max_checks"))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {"max_checks": value}
+
+
 @app.post("/api/auth/qrcode/start")
 def start_qrcode():
     try:
@@ -263,14 +294,126 @@ def retry_status():
 
 @app.post("/api/dynamics/retry-failures")
 def retry_failures():
-    if retry_state["running"]:
-        return {"started": False, "running": True}
-    retry_state["running"] = True
-    retry_state["summary"] = None
-    worker = threading.Thread(target=retry_failed_worker, daemon=True)
-    retry_state["thread"] = worker
-    worker.start()
+    with manual_task_lock:
+        if retry_state["running"] or any(item["running"] for item in manual_task_state.values()):
+            return {"started": False, "running": True, "reason": "已有任务正在使用浏览器"}
+        retry_state["running"] = True
+        retry_state["summary"] = None
+        worker = threading.Thread(target=retry_failed_worker, daemon=True)
+        retry_state["thread"] = worker
+        worker.start()
     return {"started": True, "running": True}
+
+
+def run_manual_collect():
+    try:
+        require_authenticated()
+        SearchDynamicByUps(ACCOUNT_KEY).init_search()
+        MultiUsersShareService().do_multi_uses_share()
+        manual_task_state["collect"]["summary"] = "收集任务执行完成"
+        manual_task_state["collect"]["error"] = None
+    except Exception as exc:
+        manual_task_state["collect"]["summary"] = None
+        manual_task_state["collect"]["error"] = str(exc)
+    finally:
+        manual_task_state["collect"]["running"] = False
+
+
+def run_manual_cleanup():
+    try:
+        require_authenticated()
+        summaries = []
+        for user in MultiUsersShareService().get_multi_uses():
+            sync_summary = AccountDynamicBackfill(user).sync_new_personal_forwards()
+            ExpiredShareCleanup(user).run()
+            summaries.append({"account": user, "sync": sync_summary})
+        manual_task_state["cleanup"]["summary"] = summaries
+        manual_task_state["cleanup"]["error"] = None
+    except Exception as exc:
+        manual_task_state["cleanup"]["summary"] = None
+        manual_task_state["cleanup"]["error"] = str(exc)
+    finally:
+        manual_task_state["cleanup"]["running"] = False
+
+
+def run_reidentify_expired():
+    try:
+        require_authenticated()
+        summary = AccountDynamicBackfill(ACCOUNT_KEY).reidentify_expired_dynamics(100)
+        manual_task_state["reidentify_expired"]["summary"] = summary
+        manual_task_state["reidentify_expired"]["error"] = None
+    except Exception as exc:
+        manual_task_state["reidentify_expired"]["summary"] = None
+        manual_task_state["reidentify_expired"]["error"] = str(exc)
+    finally:
+        manual_task_state["reidentify_expired"]["running"] = False
+
+
+def run_reidentify_one(dynamic_id):
+    try:
+        require_authenticated()
+        db = init_db()
+        value = dynamic_id.replace("'", "''")
+        rows = db.executeSql(
+            "SELECT dynamic_id, dyn_url FROM t_draw_dynamic "
+            "WHERE dynamic_id='%s' AND status='2' LIMIT 1" % value
+        ) or []
+        if not rows:
+            raise RuntimeError("动态不存在或当前不是过期状态")
+        summary = AccountDynamicBackfill(ACCOUNT_KEY).reidentify_single_expired_dynamic(
+            dynamic_id, rows[0].get("dyn_url")
+        )
+        manual_task_state["reidentify_one"]["summary"] = summary
+        manual_task_state["reidentify_one"]["error"] = None
+    except Exception as exc:
+        manual_task_state["reidentify_one"]["summary"] = None
+        manual_task_state["reidentify_one"]["error"] = str(exc)
+    finally:
+        manual_task_state["reidentify_one"]["running"] = False
+
+
+@app.get("/api/tasks/manual-status")
+def manual_task_status():
+    return manual_task_state
+
+
+@app.post("/api/tasks/manual/{task_name}")
+def start_manual_task(task_name: str):
+    if task_name not in ("collect", "cleanup", "reidentify_expired"):
+        raise HTTPException(status_code=404, detail="unknown task")
+    state = manual_task_state[task_name]
+    with manual_task_lock:
+        if retry_state["running"] or any(item["running"] for item in manual_task_state.values()):
+            return {"started": False, "running": True, "reason": "已有任务正在使用浏览器"}
+        if state["running"]:
+            return {"started": False, "running": True}
+        state["running"] = True
+        state["summary"] = None
+        state["error"] = None
+        target = {
+            "collect": run_manual_collect,
+            "cleanup": run_manual_cleanup,
+            "reidentify_expired": run_reidentify_expired,
+        }[task_name]
+        threading.Thread(target=target, daemon=True).start()
+    return {"started": True, "running": True}
+
+
+@app.post("/api/dynamics/{dynamic_id}/reidentify")
+def reidentify_dynamic(dynamic_id: str):
+    with manual_task_lock:
+        if any(item["running"] for item in manual_task_state.values()):
+            return {"started": False, "running": True, "reason": "已有任务正在使用浏览器"}
+        state = manual_task_state["reidentify_one"]
+        state["running"] = True
+        state["summary"] = None
+        state["error"] = None
+        threading.Thread(
+            target=run_reidentify_one,
+            args=(dynamic_id,),
+            daemon=True,
+        ).start()
+    return {"started": True, "running": True, "dynamic_id": dynamic_id}
 
 
 @app.post("/api/auth/refresh")
@@ -293,12 +436,28 @@ def overview():
         "SELECT COUNT(*) AS count FROM t_draw_dynamic WHERE status='3'"
     ) or [{"count": 0}]
     pending_rows = db.executeSql(
-        "SELECT COUNT(*) AS count FROM t_draw_dynamic "
-        "WHERE status='1' AND lottery_time IS NOT NULL AND lottery_time > NOW()"
+        "SELECT COUNT(DISTINCT ad.dynamic_id) AS count "
+        "FROM t_account_dynamic ad "
+        "JOIN t_draw_dynamic dd ON dd.dynamic_id = ad.dynamic_id "
+        "WHERE ad.account_key=%s "
+        "AND ad.share_status=1 "
+        "AND ad.cleanup_status<>1 "
+        "AND dd.lottery_time IS NOT NULL "
+        "AND (CASE WHEN dd.lottery_source='explicit' "
+        "THEN DATE_ADD(dd.lottery_time, INTERVAL 10 DAY) "
+        "ELSE dd.lottery_time END) > NOW()" % repr(ACCOUNT_KEY)
     ) or [{"count": 0}]
     expired_rows = db.executeSql(
-        "SELECT COUNT(*) AS count FROM t_draw_dynamic "
-        "WHERE status='1' AND lottery_time IS NOT NULL AND lottery_time <= NOW()"
+        "SELECT COUNT(DISTINCT ad.dynamic_id) AS count "
+        "FROM t_account_dynamic ad "
+        "JOIN t_draw_dynamic dd ON dd.dynamic_id = ad.dynamic_id "
+        "WHERE ad.account_key=%s "
+        "AND ad.share_status=1 "
+        "AND ad.cleanup_status<>1 "
+        "AND dd.lottery_time IS NOT NULL "
+        "AND (CASE WHEN dd.lottery_source='explicit' "
+        "THEN DATE_ADD(dd.lottery_time, INTERVAL 10 DAY) "
+        "ELSE dd.lottery_time END) <= NOW()" % repr(ACCOUNT_KEY)
     ) or [{"count": 0}]
     return {
         "auth": public_auth(),
@@ -327,13 +486,31 @@ def overview():
 def failures():
     db = init_db()
     rows = db.executeSql("""
-        SELECT dyn_url, dynamic_id, up_id, publish_time, lottery_time, status
+        SELECT dyn_url, dynamic_id, up_id, insert_time, publish_time,
+               lottery_time, lottery_source, status
         FROM t_draw_dynamic
         WHERE status='3'
-        ORDER BY insert_time DESC
+        ORDER BY insert_time ASC, dynamic_id ASC
         LIMIT 100
     """) or []
     return {"items": rows}
+
+
+@app.get("/api/dynamics/expired")
+def expired_dynamics():
+    db = init_db()
+    rows = db.executeSql("""
+        SELECT dyn_url, dynamic_id, up_id, insert_time, publish_time,
+               lottery_time, lottery_source, status
+        FROM t_draw_dynamic
+        WHERE status='2'
+        ORDER BY insert_time ASC, dynamic_id ASC
+        LIMIT 100
+    """) or []
+    count_rows = db.executeSql(
+        "SELECT COUNT(*) AS count FROM t_draw_dynamic WHERE status='2'"
+    ) or [{"count": 0}]
+    return {"items": rows, "count": int(count_rows[0].get("count") or 0)}
 
 
 @app.post("/api/dynamics/{dynamic_id}/mark-missing")

@@ -2,6 +2,7 @@ import os
 import random
 
 from dotenv import load_dotenv
+from utils.runtime_settings import get_max_checks
 
 # 加载 .env 文件
 load_dotenv()
@@ -22,7 +23,7 @@ def get_env_bool(name, default):
 
 
 # 读取变量
-max_checks = int(os.getenv("max_checks"))
+max_checks = get_max_checks()
 home_url = os.getenv("home_url")
 my_user_id = os.getenv("my_user_id")
 ignore_link = os.getenv("ignore_link")
@@ -82,7 +83,7 @@ def get_random_share_content():
 
 
 def get_multi_infos(str):
-    users = os.getenv(str)
+    users = os.getenv(str) or ""
     if len(users) != 0:
         return users.split('|')
     return {}

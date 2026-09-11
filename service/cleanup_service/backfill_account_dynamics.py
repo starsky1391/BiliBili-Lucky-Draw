@@ -230,6 +230,134 @@ class AccountDynamicBackfill:
             except Exception:
                 pass
 
+    def reidentify_expired_dynamics(self, limit=100):
+        """重新识别最早入库的过期动态，只更新元数据和状态。"""
+        self.bro, self.chains = init_webdriver()
+        summary = {
+            'checked': 0,
+            'updated': 0,
+            'still_expired': 0,
+            'failed': 0,
+            'remaining': 0,
+        }
+        try:
+            LoginService(self.bro, self.chains, self.account_key).login_by_cookie()
+            self.db.cur.execute("""
+                SELECT dynamic_id, dyn_url
+                FROM t_draw_dynamic
+                WHERE status='2'
+                ORDER BY insert_time ASC, dynamic_id ASC
+                LIMIT %s
+            """, (int(limit),))
+            rows = self.db.cur.fetchall()
+            summary['checked'] = len(rows)
+            for index, row in enumerate(rows):
+                if index > 0:
+                    wait_seconds = random.randint(20, 30)
+                    mylogger.info(
+                        '过期动态重新识别限速等待 %.0f 秒（第 %s/%s 条）',
+                        wait_seconds, index + 1, len(rows)
+                    )
+                    time.sleep(wait_seconds)
+                dynamic_id = str(row.get('dynamic_id') or '')
+                dyn_url = str(row.get('dyn_url') or '')
+                try:
+                    if not dynamic_id.isdigit() or not dyn_url:
+                        raise RuntimeError('动态链接或动态ID无效')
+                    result = self.reidentify_one_readonly(dynamic_id, dyn_url)
+                    if result['status'] == '0':
+                        summary['updated'] += 1
+                        mylogger.info(
+                            '过期动态重新识别后恢复待转发：%s，开奖时间=%s',
+                            dynamic_id, result['lottery_time']
+                        )
+                    else:
+                        summary['still_expired'] += 1
+                        mylogger.info(
+                            '过期动态重新识别确认已过期：%s，开奖时间=%s',
+                            dynamic_id, result['lottery_time']
+                        )
+                except Exception as exc:
+                    summary['failed'] += 1
+                    mylogger.warning(
+                        '过期动态重新识别失败 %s：%s',
+                        dynamic_id or dyn_url, exc
+                    )
+                finally:
+                    try:
+                        self.bro.get('about:blank')
+                    except Exception:
+                        pass
+            self.db.cur.execute(
+                "SELECT COUNT(*) AS c FROM t_draw_dynamic WHERE status='2'"
+            )
+            summary['remaining'] = int(self.db.cur.fetchone()['c'])
+            mylogger.info('过期动态重新识别完成：%s', summary)
+            return summary
+        finally:
+            try:
+                self.bro.quit()
+            except Exception:
+                pass
+
+    def reidentify_one_readonly(self, dynamic_id, dyn_url=None):
+        """只读取详情并修正状态，不执行任何 B 站写操作。"""
+        dynamic_id = str(dynamic_id or '')
+        dyn_url = str(dyn_url or '')
+        if not dynamic_id.isdigit():
+            raise RuntimeError('动态ID无效')
+        source_url = (
+            dyn_url if '/opus/' in dyn_url
+            else 'https://www.bilibili.com/opus/' + dynamic_id
+        )
+        retry_session = False
+        while True:
+            try:
+                self.backfill_detail(dynamic_id, source_url)
+                break
+            except Exception as exc:
+                if self.is_session_lost_error(exc) and not retry_session:
+                    retry_session = True
+                    mylogger.warning(
+                        '动态重新识别检测到会话失效，重建会话后重试：%s',
+                        dynamic_id
+                    )
+                    self.reset_browser_session()
+                    continue
+                raise
+        detail_row = self.find_dynamic(dynamic_id)
+        lottery_time = detail_row.get('lottery_time') if detail_row else None
+        publish_time = detail_row.get('publish_time') if detail_row else None
+        lottery_source = detail_row.get('lottery_source') if detail_row else None
+        if not detail_row or not lottery_time or not publish_time:
+            raise RuntimeError('未完整识别动态发布时间或开奖时间')
+        new_status = '0' if datetime.now() < lottery_time else '2'
+        self.db.cur.execute(
+            """UPDATE t_draw_dynamic
+               SET status=%s, note=%s, lottery_source=%s
+               WHERE dynamic_id=%s""",
+            (new_status, '动态重新识别成功', lottery_source, dynamic_id)
+        )
+        self.db.con.commit()
+        return {
+            'dynamic_id': dynamic_id,
+            'status': new_status,
+            'lottery_time': lottery_time,
+            'publish_time': publish_time,
+        }
+
+    def reidentify_single_expired_dynamic(self, dynamic_id, dyn_url=None):
+        """后台单条重新识别入口，负责创建和关闭浏览器会话。"""
+        self.bro, self.chains = init_webdriver()
+        try:
+            LoginService(self.bro, self.chains, self.account_key).login_by_cookie()
+            return self.reidentify_one_readonly(dynamic_id, dyn_url)
+        finally:
+            try:
+                self.bro.quit()
+            except Exception:
+                pass
+
     def retry_failed_dynamics(self):
         """限速重新识别失败动态；遇到风控立即停止本轮。"""
         self.bro, self.chains = init_webdriver()

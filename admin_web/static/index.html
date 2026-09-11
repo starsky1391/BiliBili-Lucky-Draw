@@ -30,14 +30,26 @@
           <article class="metric"><span>清理任务</span><strong id="cleanupValue">--</strong><small>每天一次</small></article>
           <article class="metric warning"><span>失败动态</span><strong id="failureCount">--</strong><small>需要处理的记录</small></article>
           <article class="metric"><span>未开奖动态</span><strong id="pendingDrawCount">--</strong><small>status = 1，尚未到开奖时间</small></article>
-          <article class="metric"><span>已过期动态</span><strong id="expiredDrawCount">--</strong><small>status = 1，已到开奖时间</small></article>
+          <article class="metric"><span>已过期动态</span><strong id="expiredDrawCount">--</strong><small>status = 2，待人工复核或清理</small></article>
         </div>
         <div class="panel"><div class="panel-title"><h3>系统提示</h3><span id="systemNote">正在读取</span></div><p id="overviewNote">--</p></div>
+        <div class="manual-actions">
+          <button id="startCollectTask" class="primary">立即启动收集任务</button>
+          <button id="startCleanupTask" class="secondary">立即启动清理任务</button>
+        </div>
       </div>
       <div id="dynamics" class="tab">
-        <div class="section-head"><div><p class="kicker">ATTENTION QUEUE</p><h2>失败动态</h2></div><div class="section-actions"><button class="secondary" id="retryFailures">全部重新识别</button><button class="secondary" id="markAllMissing">全部标记页面丢失</button><button class="icon-button" id="refreshFailures" title="刷新失败动态">↻</button></div></div>
-        <div id="failureList" class="failure-list"></div>
-        <details class="fold"><summary>成功、跳过、已清理记录</summary><p>正常记录已折叠。数据库仍保留完整状态，可继续通过接口扩展筛选。</p></details>
+        <div class="section-head"><div><p class="kicker">ATTENTION QUEUE</p><h2>动态管理</h2></div></div>
+        <details class="fold" open>
+          <summary>失败动态 <span id="failureQueueCount">0</span></summary>
+          <div class="section-actions queue-actions"><button class="secondary" id="retryFailures">全部重新识别</button><button class="secondary" id="markAllMissing">全部标记页面丢失</button><button class="icon-button" id="refreshFailures" title="刷新失败动态">↻</button></div>
+          <div id="failureList" class="failure-list"></div>
+        </details>
+        <details class="fold">
+          <summary>过期/疑似误判动态 <span id="expiredQueueCount">0</span></summary>
+          <div class="section-actions queue-actions"><button class="secondary" id="reidentifyExpired">全部重新识别（100条）</button><button class="icon-button" id="refreshExpired" title="刷新过期动态">↻</button></div>
+          <div id="expiredList" class="failure-list"></div>
+        </details>
       </div>
       <div id="logs" class="tab">
         <div class="section-head"><div><p class="kicker">TRACE</p><h2>运行日志</h2></div><div class="section-actions"><select id="logLimit" title="日志显示范围"><option value="100">最近 100 行</option><option value="200" selected>最近 200 行</option><option value="500">最近 500 行</option></select><label class="check"><input type="checkbox" id="logErrorsOnly"> 仅错误</label><button class="icon-button" id="refreshLogs" title="刷新日志">↻</button></div></div>
@@ -60,6 +72,15 @@
             </label>
             <p id="cleanupModeHint" class="hint">保存后下次每日清理任务生效。</p>
             <button id="saveCleanupMode" class="primary">保存清理设置</button>
+          </div>
+          <div class="panel">
+            <h3>扫描数量</h3>
+            <label class="setting-row" for="maxChecks">
+              <span>单轮最大检查数</span>
+              <input id="maxChecks" type="number" min="1" step="1" inputmode="numeric">
+            </label>
+            <p class="hint">保存后用于后续扫描任务，并在重启后保留。</p>
+            <button id="saveMaxChecks" class="primary">保存扫描设置</button>
           </div>
           <div class="panel">
             <h3>安全边界</h3>

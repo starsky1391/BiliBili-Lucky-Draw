@@ -120,7 +120,7 @@ create table if not exists t_account_dynamic
     share_time       datetime null,
     own_dynamic_id   varchar(64) null,
     own_dynamic_url  varchar(255) null,
-    cleanup_status   tinyint not null default 0,
+    cleanup_status   tinyint not null default 0 comment '0未清理，1已删除，2删除失败，3处理中',
     error_message    varchar(500) null,
     insert_time      datetime null,
     update_time      datetime null,

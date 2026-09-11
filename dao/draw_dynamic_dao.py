@@ -206,6 +206,21 @@ class DrawDynamicDao(object):
         except Exception as e:
             print(e)
 
+    def update_lottery_metadata(self, url, lottery_time, lottery_source=None):
+        try:
+            match = re.search(r'(?:/opus/|/)(\d+)(?:[/?#]|$)', str(url or ''))
+            if not match:
+                return
+            self.db.cur.execute(
+                """UPDATE t_draw_dynamic
+                   SET lottery_time=%s, lottery_source=%s
+                   WHERE dynamic_id=%s""",
+                (lottery_time, lottery_source, match.group(1))
+            )
+            self.db.con.commit()
+        except Exception as e:
+            print(e)
+
     def update_up_info(self, dynamic_id, up_id, publish_time=None,
                        lottery_time=None, lottery_source=None):
         fields = ['up_id = %s']

@@ -102,7 +102,11 @@ class BiliLinkShare(object):
                     time.sleep(30)
                 processed_share_attempts = processed_share_attempts + 1
                 if dyn.lottery_time is not None:
-                    self.draw_dynamic_dao.update_lottery_time(lucky_dynamic_url, dyn.lottery_time)
+                    self.draw_dynamic_dao.update_lottery_metadata(
+                        lucky_dynamic_url,
+                        dyn.lottery_time,
+                        dyn.lottery_source
+                    )
                 # 保存转发状态和关注的up主信息
                 if dyn.share_status == 0:
                     self.draw_dynamic_dao.update_sharedUrl(url=lucky_dynamic_url, status=1)
