@@ -8,6 +8,7 @@ import requests
 from datetime import datetime
 
 from dao.init_db import init_db
+from dao.pending_unfollow_dao import PendingUnfollowDao
 from service.log_service.log_printer_service import MyLogger
 from utils import globals
 from utils.runtime_settings import get_cleanup_mode
@@ -19,6 +20,7 @@ class ExpiredShareCleanup:
     def __init__(self, account_key):
         self.account_key = account_key
         self.db = init_db()
+        self.pending_unfollow_dao = PendingUnfollowDao(self.db)
         self.cookie_value, self.bili_jct = self.load_auth_cookies()
 
     def load_auth_cookies(self):
@@ -54,6 +56,20 @@ class ExpiredShareCleanup:
             'checked': len(rows), 'deleted': 0, 'skipped': 0,
             'failed': 0, 'unfollowed': 0,
         }
+        if cleanup_mode == "delete_and_unfollow":
+            pending_summary = self.process_pending_unfollows(unfollowed_up_ids)
+            summary['failed'] += pending_summary['failed']
+            summary['unfollowed'] += pending_summary['unfollowed']
+            if pending_summary['blocked']:
+                mylogger.warning("待取关缓存触发 B 站风控，本轮停止继续清理")
+                return summary
+            if pending_summary['touched'] and rows:
+                wait_seconds = random.randint(20, 30)
+                mylogger.info(
+                    "待取关缓存处理完成，进入正常清理前限速等待 %.0f 秒",
+                    wait_seconds
+                )
+                time.sleep(wait_seconds)
         for index, row in enumerate(rows):
             if index > 0:
                 wait_seconds = random.randint(20, 30)
@@ -79,7 +95,14 @@ class ExpiredShareCleanup:
                 self.update_deleted(row['id'])
                 summary['deleted'] += 1
                 if cleanup_mode == "delete_and_unfollow":
-                    for up_id in relation_up_ids:
+                    for up_index, up_id in enumerate(relation_up_ids):
+                        if up_index > 0:
+                            wait_seconds = random.randint(1, 5)
+                            mylogger.info(
+                                "同一动态多个 UP 取关限速等待 %.0f 秒（第 %s/%s 个）",
+                                wait_seconds, up_index + 1, len(relation_up_ids)
+                            )
+                            time.sleep(wait_seconds)
                         if up_id in unfollowed_up_ids:
                             mylogger.info("本批次已完成取关，跳过重复取关 UP：%s", up_id)
                             continue
@@ -99,12 +122,65 @@ class ExpiredShareCleanup:
                         except Exception as exc:
                             summary['failed'] += 1
                             mylogger.error("取关 UP 失败 %s: %s", up_id, exc)
+                            if self.is_risk_control_error(exc):
+                                remaining_up_ids = relation_up_ids[
+                                    relation_up_ids.index(up_id):
+                                ]
+                                for pending_up_id in remaining_up_ids:
+                                    self.pending_unfollow_dao.enqueue(
+                                        self.account_key, pending_up_id,
+                                        row['dynamic_id'], str(exc)
+                                    )
+                                mylogger.warning(
+                                    "取关触发 B 站风控，已缓存当前及后续 UP 并停止本轮取关：%s",
+                                    ", ".join(remaining_up_ids)
+                                )
+                                return summary
             except Exception as exc:
                 self.update_failed(row['id'], str(exc))
                 summary['failed'] += 1
                 mylogger.error("删除本人动态失败 %s: %s", own_id, exc)
+                if self.is_risk_control_error(exc):
+                    mylogger.warning(
+                        "删除动态触发 B 站风控，立即停止本轮清理：%s",
+                        row['dynamic_id']
+                    )
+                    break
         mylogger.info("过期清理完成：%s", summary)
         return summary
+
+    def process_pending_unfollows(self, unfollowed_up_ids):
+        result = {'failed': 0, 'unfollowed': 0, 'blocked': False, 'touched': False}
+        rows = self.pending_unfollow_dao.query_pending(self.account_key)
+        for index, row in enumerate(rows):
+            if index > 0:
+                wait_seconds = random.randint(20, 30)
+                mylogger.info(
+                    "待取关缓存限速等待 %.0f 秒（第 %s/%s 条）",
+                    wait_seconds, index + 1, len(rows)
+                )
+                time.sleep(wait_seconds)
+            up_id = str(row['up_id'])
+            if up_id in unfollowed_up_ids or not self.can_unfollow(up_id):
+                continue
+            if not self.pending_unfollow_dao.mark_processing(row['id']):
+                continue
+            try:
+                self.unfollow(up_id)
+                result['touched'] = True
+                self.pending_unfollow_dao.delete(row['id'])
+                unfollowed_up_ids.add(up_id)
+                result['unfollowed'] += 1
+                mylogger.info("待取关缓存处理成功：%s", up_id)
+            except Exception as exc:
+                result['touched'] = True
+                self.pending_unfollow_dao.mark_failed(row['id'], str(exc))
+                result['failed'] += 1
+                mylogger.error("待取关缓存处理失败 %s: %s", up_id, exc)
+                if self.is_risk_control_error(exc):
+                    result['blocked'] = True
+                    break
+        return result
 
     def load_expired_rows(self):
         self.db.cur.execute("""SELECT ad.id, ad.own_dynamic_id, dd.dynamic_id, dd.up_id,
@@ -156,6 +232,10 @@ class ExpiredShareCleanup:
                 operation, response.status_code, content_type, body[:500])
             raise RuntimeError('%s接口返回非JSON响应：HTTP %s' %
                                (operation, response.status_code))
+
+    @staticmethod
+    def is_risk_control_error(error):
+        return '-352' in str(error) or '352' in str(error)
 
     def update_deleted(self, record_id):
         self.db.cur.execute("""UPDATE t_account_dynamic

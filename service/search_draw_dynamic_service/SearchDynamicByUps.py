@@ -169,10 +169,27 @@ return values;
         except Exception as e:
             mylogger.warning('详情页加载失败，跳过：' + str(detail_url) + '，原因：' + str(e))
             return None
+        if self.is_missing_dynamic_page(bro):
+            mylogger.warning('动态详情页不存在或已删除，跳过待转发入库：' + str(detail_url))
+            return None
         time.sleep(2)
         links = self.extract_links_from_current_page(bro)
         detail_url = self.normalize_dynamic_url(detail_url)
         return [link for link in links if link != detail_url]
+
+    @staticmethod
+    def is_missing_dynamic_page(bro):
+        title = (bro.title or '').strip()
+        if '404' in title or '出错啦' in title:
+            return True
+        try:
+            body_text = bro.find_element(By.TAG_NAME, 'body').text or ''
+        except Exception:
+            return False
+        markers = ('页面不存在', '动态不存在', '内容不存在', '已被删除', '返回上一页')
+        return any(marker in body_text for marker in markers) and (
+            '换一张' in body_text or '刷新' in body_text or '返回上一页' in body_text
+        )
 
     def should_scan_detail_page(self, detail_url):
         detail_url = self.normalize_dynamic_url(detail_url)
@@ -218,6 +235,10 @@ return values;
                 continue
             detail_links = self.extract_links_from_detail_page(bro, detail_url)
             if detail_links is None:
+                links = [
+                    link for link in links
+                    if link != self.normalize_dynamic_url(detail_url)
+                ]
                 self.scan_cache_dao.save_failure('detail', detail_url, remove_query_string(base_url), note, '详情页加载超时')
                 continue
             self.scan_cache_dao.save_success('detail', detail_url, remove_query_string(base_url), note, len(detail_links))

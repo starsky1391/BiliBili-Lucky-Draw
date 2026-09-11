@@ -404,11 +404,12 @@ Promise.all([
             r'(截止|截至|报名截止|報名截止|参与截止|參與截止|'
             r'结束时间|結束時間|结束|結束)'
         )
+        giveaway_keyword_pattern = r'(揪|抽取|抽奖|抽中|抽到|幸运粉丝|幸运观众)'
         keyword_candidates = []
         secondary_candidates = []
         all_dates = []
-        current_year = date.today().year
-        date_pattern = r'((?:20\d{2})年)?(\d{1,2})月(\d{1,2})[日号]?'
+        current_year = publish_time.year if publish_time is not None else date.today().year
+        date_pattern = r'((?:20\d{2})年)?\s*(\d{1,2})\s*月\s*(\d{1,2})\s*[日号]?'
         for match in re.finditer(date_pattern, text):
             year = int(match.group(1)[:-1]) if match.group(1) else current_year
             parsed = self.parse_date_time_nearby(
@@ -424,7 +425,7 @@ Promise.all([
             )
             if parsed is not None:
                 all_dates.append(parsed)
-        for match in re.finditer(r'(\d{1,2})月(?:中旬?|底|末)', text):
+        for match in re.finditer(r'(\d{1,2})\s*月\s*(?:初|上旬?|中旬?|底|末)', text):
             month = int(match.group(1))
             year = current_year
             try:
@@ -436,7 +437,7 @@ Promise.all([
             '一': 1, '二': 2, '三': 3, '四': 4, '五': 5, '六': 6,
             '七': 7, '八': 8, '九': 9, '十': 10, '十一': 11, '十二': 12,
         }
-        for match in re.finditer(r'([一二三四五六七八九十]+)月(?:中旬?|底|末)', text):
+        for match in re.finditer(r'([一二三四五六七八九十]+)\s*月\s*(?:初|上旬?|中旬?|底|末)', text):
             month = chinese_months.get(match.group(1))
             if month is None:
                 continue
@@ -479,7 +480,7 @@ Promise.all([
                     absolute_start = start + match.start()
                     target = preceding_candidates if absolute_start < keyword.start() else following_candidates
                     target.append((abs(absolute_start - keyword.start()), parsed))
-            for match in re.finditer(r'(\d{1,2})月(?:中旬?|底|末)', context):
+            for match in re.finditer(r'(\d{1,2})\s*月\s*(?:初|上旬?|中旬?|底|末)', context):
                 month = int(match.group(1))
                 year = current_year + (1 if month == 12 else 0)
                 vague_date = date(year, month % 12 + 1, 1)
@@ -489,7 +490,7 @@ Promise.all([
                     abs((start + match.start()) - keyword.start()),
                     datetime.combine(vague_date, datetime_time.min)
                 ))
-            for match in re.finditer(r'([一二三四五六七八九十]+)月(?:中旬?|底|末)', context):
+            for match in re.finditer(r'([一二三四五六七八九十]+)\s*月\s*(?:初|上旬?|中旬?|底|末)', context):
                 month = chinese_months.get(match.group(1))
                 if month is None:
                     continue
@@ -516,6 +517,11 @@ Promise.all([
             )
             if secondary_candidates:
                 return max(secondary_candidates)
+        giveaway_matches = list(re.finditer(
+            giveaway_keyword_pattern, text, re.IGNORECASE
+        ))
+        if giveaway_matches and all_dates:
+            return max(all_dates)
         # 没有任何开奖语义时，普通日期可能是活动开始、发货或其他时间，
         # 不能直接当作开奖时间；有开奖语义但日期不在关键词附近时，才允许全局兜底。
         if keyword_matches and all_dates:

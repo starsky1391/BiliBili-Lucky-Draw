@@ -128,6 +128,21 @@ create table if not exists t_account_dynamic
     key idx_account_cleanup (account_key, cleanup_status)
 ) engine=InnoDB default charset=utf8mb4;
 
+create table if not exists t_pending_unfollow
+(
+    id                bigint auto_increment primary key,
+    account_key       varchar(100) not null,
+    up_id             varchar(50) not null,
+    source_dynamic_id varchar(64) null,
+    status            tinyint not null default 2 comment '2因352失败待重试，3处理中',
+    error_message     varchar(500) null,
+    retry_time        datetime null,
+    insert_time       datetime not null,
+    update_time       datetime not null,
+    unique key uk_account_up (account_key, up_id),
+    key idx_pending_unfollow (account_key, status, retry_time)
+) engine=InnoDB default charset=utf8mb4;
+
 create table if not exists t_auth_session
 (
     id                bigint auto_increment primary key,
