@@ -74,7 +74,7 @@ echo.
 echo Container status:
 docker compose ps
 echo.
-echo Admin console: http://127.0.0.1:8000
+echo Admin console: http://127.0.0.1:18000
 pause
 goto menu
 

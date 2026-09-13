@@ -132,7 +132,7 @@ def vnc_url():
     session_id = getattr(driver, "session_id", None) if driver else None
     if not session_id:
         return None
-    return "http://127.0.0.1:7900/vnc.html?autoconnect=true&host=127.0.0.1&port=5555&path=session/%s/se/vnc&resize=scale" % session_id
+    return "http://127.0.0.1:17900/vnc.html?autoconnect=true&host=127.0.0.1&port=5555&path=session/%s/se/vnc&resize=scale" % session_id
 
 
 def login_worker(driver, chains):

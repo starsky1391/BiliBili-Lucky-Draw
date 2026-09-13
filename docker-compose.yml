@@ -28,7 +28,7 @@ services:
     container_name: bili-selenium
     ports:
       - 5555:4444
-      - "127.0.0.1:7900:7900"
+      - "127.0.0.1:17900:7900"
     shm_size: 1g
     mem_limit: 2g
     environment:
@@ -105,7 +105,7 @@ services:
       - ./cookie:/app/cookie
       - ./Log:/app/Log
     ports:
-      - "127.0.0.1:8000:8000"
+      - "127.0.0.1:18000:8000"
     environment:
       TZ: ${TZ:-Asia/Shanghai}
       DB_HOST: bili-db
