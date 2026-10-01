@@ -38,7 +38,7 @@ async function startUserLogin(uid=null){try{await getJson("/api/users/login/star
 async function refreshCleanupSettings(){const d=await getJson("/api/settings/cleanup");const select=$("#cleanupMode");select.innerHTML=d.options.map(x=>`<option value="${x.value}">${x.label}</option>`).join("");select.value=d.mode;updateCleanupHint(d.mode)}
 async function refreshMaxChecks(){const d=await getJson("/api/settings/max-checks");$("#maxChecks").value=d.max_checks}
 function joinUps(items){return (items||[]).join("\n")}
-function showUpsSettings(d){$("#extraUps").value=joinUps(d.extra_ups);$("#envUps").textContent=(d.env_ups||[]).join(" | ")||"未配置";$("#mergedUps").textContent=(d.merged_ups||[]).join(" | ")||"未配置"}
+function showUpsSettings(d){const extra=d.extra_ups||[],merged=d.merged_ups||[];$("#extraUps").value=joinUps(extra);$("#envUps").textContent=(d.env_ups||[]).join(" | ")||"未配置";$("#mergedUps").textContent=merged.join(" | ")||"未配置";$("#upsOverview").textContent=`追加 ${extra.length} 项 · 最终生效 ${merged.length} 项`}
 async function refreshUpsSettings(){const d=await getJson("/api/settings/ups");showUpsSettings(d)}
 function updateCleanupHint(mode){$("#cleanupModeHint").textContent=mode==="disabled"?"当前不会删除动态，也不会取关。":mode==="delete_only"?"当前只删除本人过期动态，不执行取关。":"当前删除本人过期动态，并在确认没有其他有效抽奖后取关相关 UP。"}
 async function saveCleanupMode(){const button=$("#saveCleanupMode");button.disabled=true;try{const mode=$("#cleanupMode").value;await getJson("/api/settings/cleanup",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({mode})});updateCleanupHint(mode);button.textContent="已保存";setTimeout(()=>button.textContent="保存清理设置",1200);refreshOverview()}catch(e){alert(e.message)}finally{button.disabled=false}}

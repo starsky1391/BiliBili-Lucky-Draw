@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Bili Draw Console</title>
-  <link rel="stylesheet" href="/assets/style.css?v=20261001-1">
+  <link rel="stylesheet" href="/assets/style.css?v=20261001-5">
 </head>
 <body>
   <header class="topbar">
@@ -64,44 +64,36 @@
       </div>
       <div id="settings" class="tab">
         <div class="section-head"><div><p class="kicker">ACCOUNT</p><h2>账号设置</h2></div></div>
-        <div class="settings-grid">
-          <div class="panel">
-            <h3>过期动态清理</h3>
-            <label class="setting-row" for="cleanupMode">
-              <span>清理方式</span>
-              <select id="cleanupMode"></select>
-            </label>
-            <p id="cleanupModeHint" class="hint">保存后下次每日清理任务生效。</p>
-            <button id="saveCleanupMode" class="primary">保存清理设置</button>
-          </div>
-          <div class="panel">
-            <h3>扫描数量</h3>
-            <label class="setting-row" for="maxChecks">
-              <span>单轮最大检查数</span>
-              <input id="maxChecks" type="number" min="1" step="1" inputmode="numeric">
-            </label>
-            <p class="hint">保存后用于后续扫描任务，并在重启后保留。</p>
-            <button id="saveMaxChecks" class="primary">保存扫描设置</button>
-          </div>
-          <div class="panel">
-            <h3>订阅 UP</h3>
-            <label class="stacked-field" for="extraUps">
-              <span>前端追加订阅</span>
-              <textarea id="extraUps" rows="6" placeholder="每行一个 UP 名称、UID 或空间动态页链接"></textarea>
-            </label>
-            <p class="hint">不会覆盖 .env；保存后与 .env 的 ups 合并去重，下一轮收集任务生效。</p>
-            <div class="up-summary">
-              <span>.env 保底</span>
-              <code id="envUps">--</code>
-              <span>最终生效</span>
-              <code id="mergedUps">--</code>
+        <div class="settings-list">
+          <section class="settings-entry">
+            <div class="settings-label"><h3>过期动态清理</h3><p>设置到期动态的处理方式。</p></div>
+            <div class="settings-control">
+              <label class="setting-row" for="cleanupMode"><span>清理方式</span><select id="cleanupMode"></select></label>
+              <p id="cleanupModeHint" class="hint">保存后下次每日清理任务生效。</p>
+              <button id="saveCleanupMode" class="primary">保存清理设置</button>
             </div>
-            <button id="saveUps" class="primary">保存订阅 UP</button>
-          </div>
-          <div class="panel">
-            <h3>安全边界</h3>
-            <p>管理端仅绑定本机。Cookie 只保存到容器共享目录，不显示在页面，也不写入数据库。</p>
-          </div>
+          </section>
+          <section class="settings-entry">
+            <div class="settings-label"><h3>扫描数量</h3><p>控制单轮动态扫描上限。</p></div>
+            <div class="settings-control">
+              <label class="setting-row" for="maxChecks"><span>单轮最大检查数</span><input id="maxChecks" type="number" min="1" step="1" inputmode="numeric"></label>
+              <p class="hint">保存后用于后续扫描任务，并在重启后保留。</p>
+              <button id="saveMaxChecks" class="primary">保存扫描设置</button>
+            </div>
+          </section>
+          <details class="settings-entry settings-ups">
+            <summary class="settings-entry-summary"><span class="settings-label"><strong>订阅 UP</strong><small>前端追加订阅与环境变量合并结果</small></span><span id="upsOverview" class="settings-entry-value">正在读取</span></summary>
+            <div class="settings-entry-detail">
+              <label class="stacked-field" for="extraUps"><span>前端追加订阅</span><textarea id="extraUps" rows="6" placeholder="每行一个 UP 名称、UID 或空间动态页链接"></textarea></label>
+              <p class="hint">不会覆盖 .env；保存后与 .env 的 ups 合并去重，下一轮收集任务生效。</p>
+              <div class="up-summary"><span>.env 保底</span><code id="envUps">--</code><span>最终生效</span><code id="mergedUps">--</code></div>
+              <button id="saveUps" class="primary">保存订阅 UP</button>
+            </div>
+          </details>
+          <section class="settings-entry">
+            <div class="settings-label"><h3>安全边界</h3></div>
+            <p class="settings-description">管理端仅绑定本机。Cookie 只保存到容器共享目录，不显示在页面，也不写入数据库。</p>
+          </section>
         </div>
       </div>
     </section>
@@ -123,6 +115,6 @@
       <div class="modal-foot"><span id="loginHint">扫码后将自动验证并保存登录状态。</span><span>二维码有效期约 120 秒</span></div>
     </div>
   </div>
-  <script src="/assets/app.js?v=20261001-2"></script>
+  <script src="/assets/app.js?v=20261001-3"></script>
 </body>
 </html>

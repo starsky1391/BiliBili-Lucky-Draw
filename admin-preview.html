@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="动态抽奖管理页面的脱敏静态预览">
+  <title>Bili Draw Console · 脱敏预览</title>
+  <link rel="stylesheet" href="admin_web/static/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="console-brand"><span class="bili-mark">哔</span><h1>动态抽奖管理</h1></div>
+    <div class="badge ok" title="虚构示例状态">已登录</div>
+  </header>
+  <main class="layout">
+    <aside class="rail">
+      <p class="rail-caption">WORKSPACE</p>
+      <button class="nav active" data-tab="overview"><span class="nav-glyph">⌂</span>总览</button>
+      <button class="nav" data-tab="dynamics"><span class="nav-glyph">▤</span>动态管理</button>
+      <button class="nav" data-tab="users"><span class="nav-glyph">♙</span>用户管理</button>
+      <button class="nav" data-tab="logs"><span class="nav-glyph">≋</span>运行日志</button>
+      <button class="nav" data-tab="settings"><span class="nav-glyph">⚙</span>设置</button>
+    </aside>
+    <section class="content">
+      <div id="overview" class="tab active">
+        <div class="section-head"><div><p class="kicker">WORKSPACE / OVERVIEW</p><h2>运行总览</h2><p class="page-subtitle">任务状态与近期动态一览</p></div><span>示例数据</span></div>
+        <div class="metric-grid">
+          <article class="metric"><span>收集任务</span><strong>等待调度</strong><small>每 3 小时</small></article>
+          <article class="metric"><span>清理任务</span><strong>等待调度</strong><small>每天一次</small></article>
+          <article class="metric"><span>最近验证</span><strong>已登录</strong><small>2026-10-01 10:24</small></article>
+        </div>
+        <div class="panel overview-draw-panel"><div class="panel-title"><h3>用户开奖统计</h3><span>已成功转发动态</span></div><div class="user-draw-stats">
+          <div class="user-draw-head"><span>用户</span><span>未开奖</span><span>已开奖</span></div>
+          <div class="user-draw-row"><div><strong>100000001</strong><span>林间散步</span></div><strong>42</strong><strong>18</strong></div>
+          <div class="user-draw-row"><div><strong>100000002</strong><span>星海来信</span></div><strong>26</strong><strong>7</strong></div>
+          <div class="user-draw-row"><div><strong>100000003</strong><span>云上听风</span></div><strong>31</strong><strong>12</strong></div>
+        </div></div>
+        <div class="panel"><div class="panel-title"><h3>系统状态</h3><span>任务可运行</span></div><p>数据库、统计和日志仍保持可用。</p></div>
+        <div class="manual-actions panel">
+          <div class="panel-title"><h3>手动任务</h3></div>
+          <p class="manual-task-status">没有正在运行的手动任务</p>
+          <div class="manual-user-picker">
+            <label class="manual-user-option"><input type="checkbox" checked disabled><span>100000001</span><small>林间散步</small></label>
+            <label class="manual-user-option"><input type="checkbox" disabled><span>100000002</span><small>星海来信</small></label>
+            <label class="manual-user-option"><input type="checkbox" disabled><span>100000003</span><small>云上听风</small></label>
+          </div>
+          <div class="task-line"><div><strong>收集并识别新动态</strong><small>读取订阅 UP 的新动态，并加入待处理队列</small></div><button class="primary" disabled>立即启动</button></div>
+          <div class="task-line"><div><strong>完整收集个人转发动态</strong><small>补齐历史动态的个人转发链接，不执行删除或取关</small></div><button class="secondary" disabled>立即启动</button></div>
+          <div class="task-line"><div><strong>清理已到期动态</strong><small>按当前设置删除动态，并处理对应关注关系</small></div><button class="secondary" disabled>立即启动</button></div>
+        </div>
+      </div>
+      <div id="dynamics" class="tab">
+        <div class="section-head"><div><p class="kicker">QUEUE / DYNAMICS</p><h2>动态管理</h2><p class="page-subtitle">检查失败识别与疑似过期记录</p></div><div class="section-actions"><button class="secondary" disabled>刷新列表</button></div></div>
+        <details class="fold" open>
+          <summary>失败动态 <span>1</span></summary>
+          <div class="section-actions queue-actions"><button class="secondary" disabled>全部重新识别</button><button class="secondary" disabled>全部标记页面丢失</button><span class="table-note">识别间隔 20–30 秒</span><button class="icon-button" title="刷新失败动态" disabled>↻</button></div>
+          <div class="table-wrap dynamic-table"><table><thead><tr><th>动态</th><th>UP</th><th>入库时间</th><th>动态发布时间</th><th>开奖时间</th><th>状态</th><th>操作</th></tr></thead><tbody><tr><td><a href="#">https://t.bilibili.com/示例动态</a><span class="subline">动态 ID 100000000001</span></td><td>示例 UP</td><td>2026-10-01 10:10</td><td>2026-10-01 09:50</td><td>未识别</td><td><span class="state">识别失败</span></td><td><button class="secondary" disabled>页面丢失</button></td></tr></tbody></table></div>
+        </details>
+        <details class="fold">
+          <summary>过期/疑似误判动态 <span>1</span></summary>
+          <div class="section-actions queue-actions"><button class="secondary" disabled>全部重新识别（100条）</button><span class="table-note">按入库顺序处理 · 20–30 秒间隔</span><button class="icon-button" title="刷新过期动态" disabled>↻</button></div>
+          <div class="table-wrap dynamic-table"><table><thead><tr><th>动态</th><th>UP</th><th>入库时间</th><th>动态发布时间</th><th>开奖时间</th><th>状态</th><th>操作</th></tr></thead><tbody><tr><td><a href="#">https://t.bilibili.com/示例动态</a><span class="subline">动态 ID 100000000002</span></td><td>示例 UP</td><td>2026-09-30 16:20</td><td>2026-09-29 12:00</td><td>2026-09-30 12:00</td><td><span class="state pending">疑似过期</span></td><td><button class="secondary" disabled>重新识别</button></td></tr></tbody></table></div>
+        </details>
+      </div>
+      <div id="users" class="tab">
+        <div class="section-head"><div><p class="kicker">ACCOUNTS / USERS</p><h2>用户管理</h2><p class="page-subtitle">管理独立的 B 站登录会话</p></div><div class="section-actions"><button class="primary" disabled>添加用户 / 扫码登录</button><button class="icon-button" title="刷新用户列表" disabled>↻</button></div></div>
+        <div class="user-list">
+          <article class="user-row"><div class="user-identity"><strong>100000001</strong><span class="user-remark">林间散步</span><small>林间散步</small></div><div class="user-state"><span class="state good">已登录</span><small>Cookie 已保存 · 2026-10-01 10:24</small></div><div class="user-edit"><input class="user-remark-input" value="林间散步" aria-label="用户备注" disabled><button class="secondary" disabled>保存备注</button></div><div class="user-actions"><button class="secondary" disabled>重新登录</button><button class="secondary" disabled>验证 Cookie</button><button class="secondary" disabled>停用</button></div></article>
+          <article class="user-row"><div class="user-identity"><strong>100000002</strong><span class="user-remark">星海来信</span><small>星海来信</small></div><div class="user-state"><span class="state good">已登录</span><small>Cookie 已保存 · 2026-10-01 10:21</small></div><div class="user-edit"><input class="user-remark-input" value="星海来信" aria-label="用户备注" disabled><button class="secondary" disabled>保存备注</button></div><div class="user-actions"><button class="secondary" disabled>重新登录</button><button class="secondary" disabled>验证 Cookie</button><button class="secondary" disabled>停用</button></div></article>
+          <article class="user-row"><div class="user-identity"><strong>100000003</strong><span class="user-remark">云上听风</span><small>云上听风</small></div><div class="user-state"><span class="state good">已登录</span><small>Cookie 已保存 · 2026-10-01 10:18</small></div><div class="user-edit"><input class="user-remark-input" value="云上听风" aria-label="用户备注" disabled><button class="secondary" disabled>保存备注</button></div><div class="user-actions"><button class="secondary" disabled>重新登录</button><button class="secondary" disabled>验证 Cookie</button><button class="secondary" disabled>停用</button></div></article>
+        </div>
+      </div>
+      <div id="logs" class="tab">
+        <div class="section-head"><div><p class="kicker">TRACE / SERVICE</p><h2>运行日志</h2><p class="page-subtitle">任务、登录与动态处理记录</p><span class="log-refresh-state">进入页面后每 3 秒刷新</span></div><div class="section-actions"><select title="日志显示范围" disabled><option>最近 200 行</option></select><label class="check"><input type="checkbox" disabled> 仅错误</label><button class="icon-button" title="立即刷新日志" disabled>↻</button></div></div>
+        <section class="log-panel"><div class="log-box"><div class="log-row"><span class="log-time">2026-10-01 10:24:18,000</span><span class="log-level">INFO</span><span class="log-message">示例任务 · 收集任务完成，新增动态 12 条</span></div><div class="log-row"><span class="log-time">2026-10-01 10:23:51,000</span><span class="log-level">INFO</span><span class="log-message">示例用户 100000002 · 登录状态有效</span></div><div class="log-row"><span class="log-time">2026-10-01 10:22:06,000</span><span class="log-level">INFO</span><span class="log-message">动态识别 · 待开奖 3 条</span></div></div></section>
+      </div>
+      <div id="settings" class="tab">
+        <div class="section-head"><div><p class="kicker">ACCOUNT</p><h2>账号设置</h2></div></div>
+        <div class="settings-list">
+          <section class="settings-entry">
+            <div class="settings-label"><h3>过期动态清理</h3><p>设置到期动态的处理方式。</p></div>
+            <div class="settings-control"><label class="setting-row"><span>清理方式</span><select disabled><option>删除动态并取关</option></select></label><p class="hint">当前删除本人过期动态，并在确认没有其他有效抽奖后取关相关 UP。</p><button class="primary" disabled>保存清理设置</button></div>
+          </section>
+          <section class="settings-entry">
+            <div class="settings-label"><h3>扫描数量</h3><p>控制单轮动态扫描上限。</p></div>
+            <div class="settings-control"><label class="setting-row"><span>单轮最大检查数</span><input type="number" value="100" disabled></label><p class="hint">保存后用于后续扫描任务，并在重启后保留。</p><button class="primary" disabled>保存扫描设置</button></div>
+          </section>
+          <details class="settings-entry settings-ups">
+            <summary class="settings-entry-summary"><span class="settings-label"><strong>订阅 UP</strong><small>前端追加订阅与环境变量合并结果</small></span><span class="settings-entry-value">追加 2 项 · 最终生效 4 项</span></summary>
+            <div class="settings-entry-detail">
+              <label class="stacked-field"><span>前端追加订阅</span><textarea rows="6" disabled>示例 UP 一
+示例 UP 二</textarea></label>
+              <p class="hint">不会覆盖 .env；保存后与 .env 的 ups 合并去重，下一轮收集任务生效。</p>
+              <div class="up-summary"><span>.env 保底</span><code>示例 UP A | 示例 UP B</code><span>最终生效</span><code>示例 UP A | 示例 UP B | 示例 UP 一 | 示例 UP 二</code></div>
+              <button class="primary" disabled>保存订阅 UP</button>
+            </div>
+          </details>
+          <section class="settings-entry">
+            <div class="settings-label"><h3>安全边界</h3></div>
+            <p class="settings-description">管理端仅绑定本机。Cookie 只保存到容器共享目录，不显示在页面，也不写入数据库。</p>
+          </section>
+        </div>
+      </div>
+    </section>
+  </main>
+  <script>
+    document.querySelectorAll(".nav").forEach(button=>button.addEventListener("click",()=>{
+      document.querySelectorAll(".tab").forEach(tab=>tab.classList.toggle("active",tab.id===button.dataset.tab));
+      document.querySelectorAll(".nav").forEach(item=>item.classList.toggle("active",item===button));
+    }));
+  </script>
+</body>
+</html>

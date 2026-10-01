@@ -1,21 +1,3 @@
-<div align="center">
-    <img align="center" src="https://github.com/rongchenlin/BiliBili-Lucky-Draw/blob/master/img/Readme.assets/logo.png" alt="logo" width="600">
-    <p align="center">· BiliBili-Lucky-Draw ·</p>
-    <p align="center">
-        <img src="https://img.shields.io/github/stars/rongchenlin/BiliBili-Lucky-Draw?color=red&style=flat-square">
-        <a href="mailto:2702739215@qq.com">
-            <img src="https://img.shields.io/static/v1?label=contact%20me&message=email&color=green&style=flat-square">
-        </a>
-        <a href="https://github.com/rongchenlin/BiliBili-Lucky-Draw/blob/master/LICENSE" target="_blank">
-            <img src="https://img.shields.io/static/v1?label=license&message=GPL-3.0&color=orange&style=flat-square">
-        </a>
-        <a href="https://github.com/rongchenlin/BiliBili-Lucky-Draw/issues/new/choose" target="_blank">
-            <img src="https://img.shields.io/static/v1?label=feedback&message=issues&color=pink&style=flat-square">
-        </a>
-    </p>
-    </br>
-</div>
-
 ## Ⅰ.简介
 
 常刷B站的伙伴们，是不是每次看到Up主的抽奖活动都心动不已，毕竟`抽奖总得试试吗，万一中奖了呢`，然后一波关注+转发之后，迎来的每每都是`从不缺席，从不中奖`。
@@ -64,7 +46,7 @@ docker compose build
 docker compose up -d
 ```
 
-管理页面：[Bili Draw Console](http://127.0.0.1:18000/)
+管理页面：[Bili Draw Console](http://127.0.0.1:18000/) · [脱敏预览](admin-preview.html)
 
 首次使用时，在“用户管理”页面添加用户并扫码登录。每个用户使用独立的 Cookie 会话，Cookie 保存在项目的 `cookie` 目录中。管理页面还提供按用户的开奖统计、备注管理、手动任务、动态识别队列、运行日志和清理设置。
 
