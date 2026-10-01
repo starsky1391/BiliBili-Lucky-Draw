@@ -32,29 +32,56 @@ So，如果有个小脚本能够帮助你去看看**今天有哪些Up有抽奖�
 
 ## III.使用：Docker部署（推荐）
 
-### 1.Clone本项目
+### 1.克隆本项目
 
-### **3.运行start.bat 输入1**
-
-### 或者4.在Docker中分别执行下面两条命令
-
-编译命令：
-
-```dockerfile
-docker-compose build
+```bash
+git clone https://github.com/rongchenlin/BiliBili-Lucky-Draw.git
+cd BiliBili-Lucky-Draw
 ```
 
-运行容器：
+### 2.配置环境变量
 
+复制 `.env.example` 为 `.env`，设置 `MYSQL_PASSWORD` 和 `MYSQL_ROOT_PASSWORD`，并按需调整订阅 UP、转发内容等配置。请勿将包含实际凭据的 `.env` 提交到仓库。
+
+Linux/macOS：
+
+```bash
+cp .env.example .env
 ```
-docker-compose up -d
+
+Windows PowerShell：
+
+```powershell
+Copy-Item .env.example .env
 ```
 
-<u>Tip：如果要停止容器，可以使用命令：`docker-compose down`</u>
+### 3.构建并启动容器
 
+在项目目录运行：
 
+```bash
+docker compose build
+docker compose up -d
+```
 
-### **5.打开网站[Bili Draw Console](http://127.0.0.1:8000/)**(本地地址)
+管理页面：[Bili Draw Console](http://127.0.0.1:18000/)
+
+首次使用时，在“用户管理”页面添加用户并扫码登录。每个用户使用独立的 Cookie 会话，Cookie 保存在项目的 `cookie` 目录中。管理页面还提供按用户的开奖统计、备注管理、手动任务、动态识别队列、运行日志和清理设置。
+
+查看容器状态和日志：
+
+```bash
+docker compose ps
+docker compose logs -f admin_web dynamic_share
+```
+
+停止容器：
+
+```bash
+docker compose down
+```
+
+数据库文件保存在项目目录的 `db_data` 中；停止或重建容器不会删除该目录。
 
 
 
@@ -69,5 +96,7 @@ docker-compose up -d
 - [x] 开发桌面程序(目前只是简单版本)
 - [x] 过期动态的删除
 - [x] 接入B站UP主每日总结的抽奖动态列表，自动完成对其转发
+- [x] 多用户 Cookie 会话、用户备注及按用户开奖统计
+- [x] Web 管理控制台：手动任务、动态管理、运行日志和运行设置
 
 ---
