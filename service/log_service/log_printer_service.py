@@ -9,8 +9,11 @@ class MyLogger(object):
         self.name = name
         # ①创建一个记录器
         self.logger = logging.getLogger(self.name)
-        self.logger.setLevel("INFO")  # 设置日志级别为 'level'，即只有日志级别大于等于'level'的日志才会输出
+        self.logger.setLevel(logging.INFO)
+        self.logger.propagate = False
         self.formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")  # 创建formatter
+        if self.logger.handlers:
+            return
         # ②创建屏幕-输出到控制台，设置输出等级
         self.streamHandler = logging.StreamHandler()
         self.streamHandler.setLevel("INFO")

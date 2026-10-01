@@ -21,7 +21,7 @@ class RemoveMsgService(object):
         self.cnt = cnt
         self.bro = bro
         self.chains = chains
-        mylogger.error('移除通知信息!')
+        mylogger.info('移除通知信息!')
 
     def do_remove(self):
         base_url = 'https://message.bilibili.com/?spm_id_from=333.1007.0.0#/whisper'

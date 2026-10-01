@@ -15,15 +15,20 @@ class MysqldbHelper():
             self.con.autocommit(1)
             # 所有的查询，都在连接 con 的一个模块 cursor 上面运行的
             self.cur = self.con.cursor()
-        except:
+        except pymysql.Error as e:
             print("DataBase connect error,please check the db config.")
+            print(e)
 
     # 关闭数据库连接
     def close(self):
-        if not self.con:
-            self.con.close()
-        else:
-            print("DataBase doesn't connect,close connectiong error;please check the db config.")
+        try:
+            if self.cur is not None:
+                self.cur.close()
+        finally:
+            self.cur = None
+            if self.con is not None:
+                self.con.close()
+            self.con = None
 
     # 创建数据库
     def createDataBase(self, DB_NAME):
@@ -286,10 +291,10 @@ class MysqldbHelper():
         return data
 
     def __del__(self):  # 对象资源被释放时触发，在对象即将被删除时的最后操作
-        # 关闭游标
-        self.cur.close()
-        # 关闭数据库连接
-        self.con.close()
+        try:
+            self.close()
+        except Exception:
+            pass
 
     def execute_db(self, sql):
         """更新/新增/删除"""

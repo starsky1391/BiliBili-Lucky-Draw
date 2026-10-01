@@ -1,5 +1,3 @@
-import logging
-
 import pymysql
 
 from utils.mysql_operate import MysqldbHelper
@@ -20,13 +18,7 @@ def init_db():
         'charset': charset,
         'cursorclass': pymysql.cursors.DictCursor
     }
-    log_config = dict(config)
-    log_config['passwd'] = '***'
-    logging.warning("ip :" + str(db_host))
-    logging.info("db info :")
-    logging.info(log_config)
     db = MysqldbHelper(config)
     db.selectDataBase(dbname)
-    logging.warning("创建数据库连接信息 :" + str(log_config))
     return db
 

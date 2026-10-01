@@ -659,7 +659,8 @@ if (comments) comments.scrollIntoView({block: 'center'});
         try:
             bro.get(self.upUrl)
             self.wait_css(bro, self.FOLLOW_CSS, timeout=20)
-            if self.is_followed_by_relation_api(bro):
+            relation = self.get_follow_relation(bro)
+            if relation.get('followed'):
                 mylogger.info("UP主已关注，跳过关注")
                 return
             follow_btn = self.get_space_follow_button(bro)
@@ -673,9 +674,8 @@ if (comments) comments.scrollIntoView({block: 'center'});
                 raise Exception("主页关注按钮状态未知：" + self.get_element_text(follow_btn))
             self.click_by_js(bro, follow_btn)
             random_sleep(start=1, end=2)
-            WebDriverWait(bro, 10, poll_frequency=2).until(
-                lambda driver: self.is_followed_on_space(driver) or self.is_followed_by_relation_api(driver)
-            )
+            if not self.wait_follow_relation(bro, expected=True):
+                raise Exception("关注操作结果无法确认")
         except Exception as e:
             mylogger.error("[click_follow 点击“关注” 出错 %s]" % e, exc_info=True)
             raise
@@ -702,8 +702,11 @@ if (comments) comments.scrollIntoView({block: 'center'});
         return button is not None and self.has_text(button, ["已关注", "已互粉"])
 
     def is_followed_by_relation_api(self, bro):
+        return self.get_follow_relation(bro).get('followed', False)
+
+    def get_follow_relation(self, bro):
         if not self.upId:
-            return False
+            return {'ok': False, 'followed': False, 'code': None}
         try:
             result = bro.execute_async_script("""
 const fid = arguments[0];
@@ -714,11 +717,23 @@ fetch('https://api.bilibili.com/x/relation?fid=' + encodeURIComponent(fid), {cre
   .catch(() => done({}));
 """, self.upId)
             if result.get('code') != 0:
-                return False
+                return {'ok': False, 'followed': False, 'code': result.get('code')}
             attribute = int(result.get('data', {}).get('attribute') or 0)
-            return (attribute & 2) == 2
+            return {'ok': True, 'followed': (attribute & 2) == 2, 'code': 0}
         except Exception:
-            return False
+            return {'ok': False, 'followed': False, 'code': None}
+
+    def wait_follow_relation(self, bro, expected, attempts=3):
+        for attempt in range(attempts):
+            relation = self.get_follow_relation(bro)
+            if relation.get('followed') is expected:
+                mylogger.info("关注状态确认成功：%s", "已关注" if expected else "已取关")
+                return True
+            if relation.get('code') in (429, -429):
+                mylogger.warning("关注状态查询触发 429，第 %s/%s 次重试", attempt + 1, attempts)
+            if attempt < attempts - 1:
+                random_sleep(start=2, end=4)
+        return False
 
     def click_like(self, bro, chains):
         """

@@ -9,6 +9,7 @@ from selenium.webdriver.common.by import By
 from dao.account_dynamic_dao import AccountDynamicDao
 from dao.draw_dynamic_dao import DrawDynamicDao
 from dao.init_db import init_db
+from service.auth_service import AuthenticationRequiredError
 from service.log_service.log_printer_service import MyLogger
 from service.login_service.login_service import LoginService
 from service.share_service.share_one_dynamic import DynamicShareBase
@@ -84,6 +85,8 @@ class AccountDynamicBackfill:
                         'https://www.bilibili.com/opus/' + own_id
                     )
                     summary['matched'] += 1
+                except AuthenticationRequiredError:
+                    raise
                 except Exception as exc:
                     summary['failed'] += 1
                     mylogger.warning('回填单条动态失败：%s', exc)
@@ -188,6 +191,8 @@ class AccountDynamicBackfill:
                         summary['failed'] += 1
                     else:
                         summary['updated'] += 1
+                except AuthenticationRequiredError:
+                    raise
                 except Exception as exc:
                     if self.is_session_lost_error(exc):
                         try:
@@ -213,6 +218,8 @@ class AccountDynamicBackfill:
                             else:
                                 summary['updated'] += 1
                             continue
+                        except AuthenticationRequiredError:
+                            raise
                         except Exception as retry_exc:
                             exc = retry_exc
                     summary['failed'] += 1
@@ -277,6 +284,8 @@ class AccountDynamicBackfill:
                             '过期动态重新识别确认已过期：%s，开奖时间=%s',
                             dynamic_id, result['lottery_time']
                         )
+                except AuthenticationRequiredError:
+                    raise
                 except Exception as exc:
                     summary['failed'] += 1
                     mylogger.warning(
@@ -315,6 +324,8 @@ class AccountDynamicBackfill:
             try:
                 self.backfill_detail(dynamic_id, source_url)
                 break
+            except AuthenticationRequiredError:
+                raise
             except Exception as exc:
                 if self.is_session_lost_error(exc) and not retry_session:
                     retry_session = True
@@ -403,6 +414,8 @@ class AccountDynamicBackfill:
                         try:
                             self.backfill_detail(dynamic_id, source_url)
                             break
+                        except AuthenticationRequiredError:
+                            raise
                         except Exception as exc:
                             if self.is_session_lost_error(exc):
                                 mylogger.warning(
@@ -414,7 +427,7 @@ class AccountDynamicBackfill:
                             if not self.is_risk_control_error(exc) or risk_retry:
                                 raise
                             risk_retry = True
-                            mylogger.error(
+                            mylogger.warning(
                                 '重新识别首次确认 B 站风控，暂停 30 秒后重试当前动态：%s',
                                 dynamic_id
                             )
@@ -428,6 +441,8 @@ class AccountDynamicBackfill:
                     )
                     self.db.con.commit()
                     summary['updated'] += 1
+                except AuthenticationRequiredError:
+                    raise
                 except Exception as exc:
                     summary['failed'] += 1
                     if self.is_risk_control_error(exc):
@@ -528,7 +543,9 @@ const url = endpoint + '?host_mid=' + encodeURIComponent(hostMid) +
 fetch(url, {credentials: 'include'}).then(r => r.json()).then(done).catch(() => done({}));
 """, self.FEED_URL, host_mid, offset)
         if not isinstance(result, dict) or result.get('code') != 0:
-            raise RuntimeError('个人动态接口返回异常')
+            code = result.get('code') if isinstance(result, dict) else None
+            message = result.get('message') if isinstance(result, dict) else None
+            raise RuntimeError('个人动态接口返回异常：code=%s，message=%s' % (code, message or '未知'))
         data = result.get('data') or {}
         return data if isinstance(data, dict) else {}
 

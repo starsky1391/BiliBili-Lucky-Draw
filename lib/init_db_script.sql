@@ -97,6 +97,8 @@ create table if not exists t_account
     id          bigint auto_increment primary key,
     account_key varchar(100) not null unique,
     bili_uid    varchar(50) null,
+    username    varchar(255) null,
+    remark      varchar(255) null,
     enabled     tinyint not null default 1,
     config_file varchar(255) null,
     insert_time datetime null,

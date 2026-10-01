@@ -2,7 +2,7 @@ from datetime import datetime
 from dao.draw_dynamic_dao import DrawDynamicDao
 from dao.init_db import init_db
 from dao.share_info_dao import ShareInfoDao
-from utils import globals
+from service.account_service import enabled_account_keys
 
 
 class StatisticsService(object):
@@ -43,7 +43,4 @@ class StatisticsService(object):
         return cnt, content
 
     def get_multi_uses(self):
-        users = globals.multi_users
-        if len(users) != 0:
-            return users.split('|')
-        return {}
+        return enabled_account_keys()

@@ -10,10 +10,23 @@ class AccountDynamicDao:
         self.db.executeCommit("""
         CREATE TABLE IF NOT EXISTS t_account
         (id BIGINT AUTO_INCREMENT PRIMARY KEY, account_key VARCHAR(100) NOT NULL UNIQUE,
-         bili_uid VARCHAR(50) NULL, enabled TINYINT NOT NULL DEFAULT 1,
+         bili_uid VARCHAR(50) NULL, username VARCHAR(255) NULL,
+         remark VARCHAR(255) NULL, enabled TINYINT NOT NULL DEFAULT 1,
          config_file VARCHAR(255) NULL, insert_time DATETIME NULL, update_time DATETIME NULL)
         ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         """)
+        columns = {
+            row.get("Field")
+            for row in (self.db.executeSql("SHOW COLUMNS FROM t_account") or [])
+        }
+        for name, definition in (
+            ("username", "VARCHAR(255) NULL"),
+            ("remark", "VARCHAR(255) NULL"),
+        ):
+            if name not in columns:
+                self.db.executeCommit(
+                    "ALTER TABLE t_account ADD COLUMN %s %s" % (name, definition)
+                )
         self.db.executeCommit("""
         CREATE TABLE IF NOT EXISTS t_up_info
         (up_id VARCHAR(50) PRIMARY KEY, is_managed TINYINT NOT NULL DEFAULT 1,

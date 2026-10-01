@@ -4,66 +4,67 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Bili Draw Console</title>
-  <link rel="stylesheet" href="/assets/style.css">
+  <link rel="stylesheet" href="/assets/style.css?v=20261001-1">
 </head>
 <body>
   <header class="topbar">
     <div>
-      <p class="kicker">BILI / DRAW OPS</p>
-      <h1>运行控制台</h1>
+      <div class="console-brand"><span class="bili-mark">哔</span><h1>动态抽奖管理</h1></div>
     </div>
     <div id="authBadge" class="badge muted">检查登录状态</div>
   </header>
   <main class="layout">
     <aside class="rail">
-      <button class="nav active" data-tab="overview">总览</button>
-      <button class="nav" data-tab="dynamics">动态管理</button>
-      <button class="nav" data-tab="logs">日志</button>
-      <button class="nav" data-tab="settings">设置</button>
+      <p class="rail-caption">WORKSPACE</p>
+      <button class="nav active" data-tab="overview"><span class="nav-glyph">⌂</span>总览</button>
+      <button class="nav" data-tab="dynamics"><span class="nav-glyph">▤</span>动态管理</button>
+      <button class="nav" data-tab="users"><span class="nav-glyph">♙</span>用户管理</button>
+      <button class="nav" data-tab="logs"><span class="nav-glyph">≋</span>运行日志</button>
+      <button class="nav" data-tab="settings"><span class="nav-glyph">⚙</span>设置</button>
     </aside>
     <section class="content">
       <div id="overview" class="tab active">
-        <div class="section-head"><div><p class="kicker">LIVE PULSE</p><h2>今天的运行面</h2></div><span id="updatedAt"></span></div>
+        <div class="section-head"><div><p class="kicker">WORKSPACE / OVERVIEW</p><h2>运行总览</h2><p class="page-subtitle">任务状态与近期动态一览</p></div><span id="updatedAt"></span></div>
         <div class="metric-grid">
-          <article class="metric"><span>登录</span><strong id="authValue">--</strong><small id="authTime">等待检查</small></article>
           <article class="metric"><span>收集任务</span><strong id="collectValue">--</strong><small>每 3 小时</small></article>
           <article class="metric"><span>清理任务</span><strong id="cleanupValue">--</strong><small>每天一次</small></article>
-          <article class="metric warning"><span>失败动态</span><strong id="failureCount">--</strong><small>需要处理的记录</small></article>
-          <article class="metric"><span>未开奖动态</span><strong id="pendingDrawCount">--</strong><small>status = 1，尚未到开奖时间</small></article>
-          <article class="metric"><span>已过期动态</span><strong id="expiredDrawCount">--</strong><small>status = 2，待人工复核或清理</small></article>
+          <article class="metric"><span>最近验证</span><strong id="authValue">--</strong><small id="authTime">等待检查</small></article>
         </div>
-        <div class="panel"><div class="panel-title"><h3>系统提示</h3><span id="systemNote">正在读取</span></div><p id="overviewNote">--</p></div>
-        <div class="manual-actions">
-          <button id="startCollectTask" class="primary">立即启动收集任务</button>
-          <button id="startCleanupTask" class="secondary">立即启动清理任务</button>
+        <div class="panel overview-draw-panel"><div class="panel-title"><h3>用户开奖统计</h3><span>已成功转发动态</span></div><div id="userDrawStats" class="user-draw-stats"><div class="empty-table">正在读取统计...</div></div></div>
+        <div class="panel"><div class="panel-title"><h3>系统状态</h3><span id="systemNote">正在读取</span></div><p id="overviewNote">--</p></div>
+        <div class="manual-actions panel">
+          <div class="panel-title"><h3>手动任务</h3></div>
+          <p id="manualTaskStatus" class="manual-task-status" aria-live="polite">没有正在运行的手动任务</p>
+          <div id="manualUserPicker" class="manual-user-picker"><span class="empty-table">暂无已启用用户</span></div>
+          <div class="task-line"><div><strong>收集并识别新动态</strong><small>读取订阅 UP 的新动态，并加入待处理队列</small></div><button id="startCollectTask" class="primary">立即启动</button></div>
+          <div class="task-line"><div><strong>完整收集个人转发动态</strong><small>补齐历史动态的个人转发链接，不执行删除或取关</small></div><button id="startBackfillPersonal" class="secondary">立即启动</button></div>
+          <div class="task-line"><div><strong>清理已到期动态</strong><small>按当前设置删除动态，并处理对应关注关系</small></div><button id="startCleanupTask" class="secondary">立即启动</button></div>
         </div>
       </div>
       <div id="dynamics" class="tab">
-        <div class="section-head"><div><p class="kicker">ATTENTION QUEUE</p><h2>动态管理</h2></div></div>
+        <div class="section-head"><div><p class="kicker">QUEUE / DYNAMICS</p><h2>动态管理</h2><p class="page-subtitle">检查失败识别与疑似过期记录</p></div><div class="section-actions"><button class="secondary" id="refreshDynamics">刷新列表</button></div></div>
         <details class="fold" open>
           <summary>失败动态 <span id="failureQueueCount">0</span></summary>
-          <div class="section-actions queue-actions"><button class="secondary" id="retryFailures">全部重新识别</button><button class="secondary" id="markAllMissing">全部标记页面丢失</button><button class="icon-button" id="refreshFailures" title="刷新失败动态">↻</button></div>
-          <div id="failureList" class="failure-list"></div>
+          <div class="section-actions queue-actions"><button class="secondary" id="retryFailures">全部重新识别</button><button class="secondary" id="markAllMissing">全部标记页面丢失</button><span class="table-note">识别间隔 20–30 秒</span><button class="icon-button" id="refreshFailures" title="刷新失败动态">↻</button></div>
+          <div id="failureList" class="table-wrap dynamic-table"></div>
         </details>
         <details class="fold">
           <summary>过期/疑似误判动态 <span id="expiredQueueCount">0</span></summary>
-          <div class="section-actions queue-actions"><button class="secondary" id="reidentifyExpired">全部重新识别（100条）</button><button class="icon-button" id="refreshExpired" title="刷新过期动态">↻</button></div>
-          <div id="expiredList" class="failure-list"></div>
+          <div class="section-actions queue-actions"><button class="secondary" id="reidentifyExpired">全部重新识别（100条）</button><span class="table-note">按入库顺序处理 · 20–30 秒间隔</span><button class="icon-button" id="refreshExpired" title="刷新过期动态">↻</button></div>
+          <div id="expiredList" class="table-wrap dynamic-table"></div>
         </details>
       </div>
+      <div id="users" class="tab">
+        <div class="section-head"><div><p class="kicker">ACCOUNTS / USERS</p><h2>用户管理</h2><p class="page-subtitle">管理独立的 B 站登录会话</p></div><div class="section-actions"><button class="primary" id="addUser">添加用户 / 扫码登录</button><button class="icon-button" id="refreshUsers" title="刷新用户列表">↻</button></div></div>
+        <div id="userList" class="user-list"></div>
+      </div>
       <div id="logs" class="tab">
-        <div class="section-head"><div><p class="kicker">TRACE</p><h2>运行日志</h2></div><div class="section-actions"><select id="logLimit" title="日志显示范围"><option value="100">最近 100 行</option><option value="200" selected>最近 200 行</option><option value="500">最近 500 行</option></select><label class="check"><input type="checkbox" id="logErrorsOnly"> 仅错误</label><button class="icon-button" id="refreshLogs" title="刷新日志">↻</button></div></div>
-        <pre id="logBox" class="log-box">正在读取日志...</pre>
+        <div class="section-head"><div><p class="kicker">TRACE / SERVICE</p><h2>运行日志</h2><p class="page-subtitle">任务、登录与动态处理记录</p><span id="logRefreshState" class="log-refresh-state">进入页面后每 3 秒刷新</span></div><div class="section-actions"><select id="logLimit" title="日志显示范围"><option value="100">最近 100 行</option><option value="200" selected>最近 200 行</option><option value="500">最近 500 行</option></select><label class="check"><input type="checkbox" id="logErrorsOnly"> 仅错误</label><button class="icon-button" id="refreshLogs" title="立即刷新日志">↻</button></div></div>
+        <section class="log-panel"><div id="logBox" class="log-box">正在读取日志...</div></section>
       </div>
       <div id="settings" class="tab">
         <div class="section-head"><div><p class="kicker">ACCOUNT</p><h2>账号设置</h2></div></div>
         <div class="settings-grid">
-          <div class="panel">
-            <h3>B 站登录</h3>
-            <p id="settingsStatus">检查中</p>
-            <button id="startLogin" class="primary">打开 B 站登录页</button>
-            <p class="hint">登录页会在弹窗中打开，扫码成功后任务自动恢复。</p>
-          </div>
           <div class="panel">
             <h3>过期动态清理</h3>
             <label class="setting-row" for="cleanupMode">
@@ -83,6 +84,21 @@
             <button id="saveMaxChecks" class="primary">保存扫描设置</button>
           </div>
           <div class="panel">
+            <h3>订阅 UP</h3>
+            <label class="stacked-field" for="extraUps">
+              <span>前端追加订阅</span>
+              <textarea id="extraUps" rows="6" placeholder="每行一个 UP 名称、UID 或空间动态页链接"></textarea>
+            </label>
+            <p class="hint">不会覆盖 .env；保存后与 .env 的 ups 合并去重，下一轮收集任务生效。</p>
+            <div class="up-summary">
+              <span>.env 保底</span>
+              <code id="envUps">--</code>
+              <span>最终生效</span>
+              <code id="mergedUps">--</code>
+            </div>
+            <button id="saveUps" class="primary">保存订阅 UP</button>
+          </div>
+          <div class="panel">
             <h3>安全边界</h3>
             <p>管理端仅绑定本机。Cookie 只保存到容器共享目录，不显示在页面，也不写入数据库。</p>
           </div>
@@ -94,16 +110,19 @@
     <div class="modal-backdrop"></div>
     <div class="modal-card">
       <div class="modal-head">
-        <div><p class="kicker">BILIBILI AUTH</p><h3 id="loginTitle">登录 B 站</h3></div>
-        <div class="modal-actions"><button id="refreshLogin" class="secondary">刷新登录页</button><button id="closeLogin" class="icon-button" title="关闭登录窗口">×</button></div>
+        <div class="login-title"><span class="bili-mark">哔</span><h3 id="loginTitle">登录 B 站</h3></div>
+        <button id="closeLogin" class="icon-button" title="关闭登录窗口">×</button>
       </div>
-      <div class="browser-frame">
-        <iframe id="browserView" title="B站登录页面" src="about:blank" allow="clipboard-read; clipboard-write"></iframe>
-        <div id="browserLoading" class="browser-loading">正在打开 B 站登录页...</div>
+      <div class="qr-login-panel">
+        <div class="qr-status"><span class="status-dot"></span><span id="loginState">等待二维码</span></div>
+        <div class="qr-frame"><img id="loginQr" alt="B站登录二维码"><div id="qrPlaceholder">正在获取二维码...</div></div>
+        <strong>使用哔哩哔哩客户端扫码登录</strong>
+        <p class="qr-caption">打开客户端，点击扫一扫</p>
       </div>
-      <div class="modal-foot"><span id="loginHint">请在窗口中的 B 站页面完成登录。</span><span id="loginState">等待登录</span></div>
+      <div class="qr-actions"><button id="refreshLogin" class="secondary">↻　刷新二维码</button></div>
+      <div class="modal-foot"><span id="loginHint">扫码后将自动验证并保存登录状态。</span><span>二维码有效期约 120 秒</span></div>
     </div>
   </div>
-  <script src="/assets/app.js?v=20260910-8"></script>
+  <script src="/assets/app.js?v=20261001-2"></script>
 </body>
 </html>

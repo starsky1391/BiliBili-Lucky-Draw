@@ -1,6 +1,9 @@
 from dao.auth_session_dao import AuthSessionDao
 from dao.init_db import init_db
-from utils import globals
+
+
+class AuthenticationRequiredError(RuntimeError):
+    pass
 
 
 def get_auth_dao():
@@ -10,29 +13,29 @@ def get_auth_dao():
     return dao
 
 
-def account_key():
-    return str(globals.my_user_id or "default")
+def account_key(value=None):
+    return str(value or "default")
 
 
-def is_authenticated():
+def is_authenticated(account=None):
     try:
         dao = get_auth_dao()
-        row = dao.get(account_key())
+        row = dao.get(account_key(account))
         if row and row.get("status") == "AUTHENTICATED":
             return True
-        return not row and bool(globals.cookie_value)
+        return False
     except Exception:
         return False
 
 
-def require_authenticated():
-    if not is_authenticated():
-        raise RuntimeError("Bilibili login is required; task paused")
+def require_authenticated(account=None):
+    if not is_authenticated(account):
+        raise AuthenticationRequiredError("Bilibili login is required; task paused")
 
 
-def mark_authenticated(uid=None):
-    get_auth_dao().upsert(account_key(), "AUTHENTICATED", uid=uid, verified=True)
+def mark_authenticated(account=None, uid=None):
+    get_auth_dao().upsert(account_key(account), "AUTHENTICATED", uid=uid, verified=True)
 
 
-def mark_login_required(error=None):
-    get_auth_dao().upsert(account_key(), "LOGIN_REQUIRED", error=error)
+def mark_login_required(account=None, error=None):
+    get_auth_dao().upsert(account_key(account), "LOGIN_REQUIRED", error=error)

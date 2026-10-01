@@ -10,15 +10,23 @@ from dao.init_db import init_db
 from dao.scan_cache_dao import ScanCacheDao
 from dao.statistics_dao import StatisticsDao
 from service.log_service.log_printer_service import MyLogger
+from service.auth_service import AuthenticationRequiredError
 from service.login_service.login_service import LoginService
 from service.notify_service.notify_service import NotifyService
 from utils.ip_util import remove_query_string
+from utils.runtime_settings import get_merged_ups
 from utils.webdriver_util import init_webdriver
 from utils import globals
 mylogger = MyLogger('SearchDynamicByUps.py').getLogger()
 
 
 class SearchDynamicByUps(object):
+    known_up_sources = {
+        "你的工具人老公": "https://space.bilibili.com/100680137/dynamic",
+        "_大锦鲤_": "https://space.bilibili.com/226257459/dynamic",
+        "Carcinus_": "https://space.bilibili.com/27332255/dynamic",
+        "闻不着味": "https://space.bilibili.com/280025263/dynamic",
+    }
 
     def __init__(self, user_id):
         self.count = 0
@@ -335,19 +343,44 @@ return values;
             return links.split('|')
         return {}
 
+    def normalize_up_source(self, item):
+        item = str(item or '').strip()
+        if not item:
+            return None, None
+        if item in self.known_up_sources:
+            return self.known_up_sources[item], item
+        if item.isdigit():
+            return 'https://space.bilibili.com/%s/dynamic' % item, item
+        match = re.search(r'space\.bilibili\.com/(\d+)', item)
+        if match:
+            return 'https://space.bilibili.com/%s/dynamic' % match.group(1), item
+        mylogger.warning('无法识别订阅 UP 配置，跳过：%s', item)
+        return None, None
+
+    def search_configured_up(self, bro, chains, item):
+        base_url, note = self.normalize_up_source(item)
+        if not base_url:
+            return
+        try:
+            self.search_dynamic_links_by_up(bro, base_url, note)
+        except AuthenticationRequiredError:
+            raise
+        except Exception as e:
+            mylogger.error("[从订阅UP查找抽奖动态 出错 %s: %s]" % (note, e), exc_info=True)
+            NotifyService().fangtang_msg_push_by_content(
+                title="订阅UP查找抽奖动态出错",
+                content='从“%s”查找抽奖动态出错' % note
+            )
+
     def init_search(self):
         bro = None
         try:
             bro, chains = init_webdriver()
             LoginService(bro, chains, self.user_id).login_by_cookie()
-            if "你的工具人老公" in globals.ups:
-                self.searchFromFiftyUps(bro, chains)
-            if "_大锦鲤_" in globals.ups:
-                self.searchFromBigFish(bro, chains)
-            if "Carcinus_" in globals.ups:
-                self.searchFromCarcinus_(bro, chains)
-            if "闻不着味" in globals.ups:
-                self.searchFromSmile(bro, chains)
+            ups = get_merged_ups()
+            mylogger.info('本轮订阅UP数量：%s，来源=%s', len(ups), '|'.join(ups))
+            for item in ups:
+                self.search_configured_up(bro, chains, item)
             # 统计入库
             self.search_note = (
                 self.search_note
@@ -356,6 +389,8 @@ return values;
                 + ";  "
             )
             self.statistics_dao.insert("", "搜索到的抽奖动态条数为: " + str(self.count), self.search_note)
+        except AuthenticationRequiredError:
+            raise
         except Exception:
             mylogger.error("[搜索抽奖动态列表主流程 出错]")
             raise

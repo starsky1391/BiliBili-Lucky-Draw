@@ -1,8 +1,9 @@
 import json
 import os
+import time
 from time import sleep
-from pathlib import Path
 from urllib.parse import urlparse
+from selenium.common.exceptions import InvalidCookieDomainException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.wait import WebDriverWait
 from service.log_service.log_printer_service import MyLogger
@@ -10,7 +11,14 @@ from utils import globals
 from utils.file_util import append_data_to_env
 from utils.time_util import random_sleep
 from utils.webdriver_util import ElementUtil, init_webdriver
-from service.auth_service import mark_authenticated, mark_login_required
+from service.auth_service import (
+    AuthenticationRequiredError,
+    mark_authenticated,
+    mark_login_required,
+)
+from dao.account_dao import AccountDao
+from dao.init_db import init_db
+from service.account_service import cookie_path
 
 mylogger = MyLogger('login_service.py').getLogger()
 
@@ -49,49 +57,78 @@ class LoginService(object):
         """
         try:
             self.bro.get(globals.home_url)
-            cookie_path = Path(os.getenv("COOKIE_DIR", "./cookie")) / (
-                str(self.my_user_id) + ".json"
-            )
-            if cookie_path.is_file():
-                with cookie_path.open("r", encoding="utf-8") as file:
+            current_host = urlparse(self.bro.current_url).hostname or ""
+            account_cookie_path = cookie_path(self.my_user_id)
+            if account_cookie_path.is_file():
+                with account_cookie_path.open("r", encoding="utf-8") as file:
                     cookies = json.load(file)
                 for cookie in cookies:
-                    if cookie.get("name") and cookie.get("value"):
+                    if not cookie.get("name") or not cookie.get("value"):
+                        continue
+                    domain = str(cookie.get("domain") or "").lstrip(".").lower()
+                    if domain and current_host.lower() != domain and not current_host.lower().endswith("." + domain):
+                        mylogger.info("跳过与当前域名不匹配的 Cookie：%s", cookie.get("name"))
+                        continue
+                    if cookie.get("expiry") and cookie["expiry"] <= time.time():
+                        mylogger.info("跳过已过期的 Cookie：%s", cookie.get("name"))
+                        continue
+                    try:
                         self.bro.add_cookie(cookie)
+                    except InvalidCookieDomainException:
+                        self.bro.get("https://www.bilibili.com/")
+                        current_host = urlparse(self.bro.current_url).hostname or ""
+                        if current_host.lower() != domain and not current_host.lower().endswith("." + domain):
+                            mylogger.info("当前页面域名不匹配，跳过 Cookie：%s", cookie.get("name"))
+                            continue
+                        try:
+                            self.bro.add_cookie(cookie)
+                        except InvalidCookieDomainException:
+                            mylogger.info("Cookie 域名校验失败，跳过：%s", cookie.get("name"))
             else:
-                cookie_value = globals.cookie_value
-                if not cookie_value:
-                    raise Exception("未找到可用 Cookie，请先在管理端登录")
-                cookie = {
-                    "domain": ".bilibili.com",
-                    "name": "SESSDATA",
-                    "path": "/",
-                    "sameSite": "Lax",
-                    "value": cookie_value,
-                }
-                self.bro.add_cookie(cookie)
-                if globals.bili_jct:
-                    csrf_cookie = {
-                        "domain": ".bilibili.com",
-                        "name": "bili_jct",
-                        "path": "/",
-                        "sameSite": "Lax",
-                        "value": globals.bili_jct,
-                    }
-                    self.bro.add_cookie(csrf_cookie)
+                mark_login_required(self.my_user_id, "未找到该 UID 对应的 Cookie 文件")
+                mylogger.warning("未找到用户 %s 的 Cookie 文件，B 站任务已暂停", self.my_user_id)
+                raise AuthenticationRequiredError(
+                    "Bilibili login is required; task paused"
+                )
             self.bro.get("https://t.bilibili.com/")
             random_sleep(start=1, end=2)
             if not self.wait_logged_in():
-                raise Exception("Cookie登录失败，请检查SESSDATA是否有效")
+                error = "Cookie登录失败，请检查SESSDATA是否有效"
+                mark_login_required(self.my_user_id, error)
+                mylogger.warning("B 站登录校验失败，任务已暂停")
+                raise AuthenticationRequiredError("Bilibili login is required; task paused")
             uid = next((cookie.get('value') for cookie in self.bro.get_cookies()
                         if cookie.get('name') == 'DedeUserID'), None)
-            mark_authenticated(uid)
+            if uid and str(uid) != str(self.my_user_id):
+                error = "Cookie UID 与目标账号不一致"
+                mark_login_required(self.my_user_id, error)
+                raise AuthenticationRequiredError("Bilibili login is required; task paused")
+            username = self.get_current_user_name()
+            AccountDao(init_db()).ensure(
+                str(self.my_user_id), bili_uid=uid or self.my_user_id,
+                username=username,
+                config_file=account_cookie_path.name if account_cookie_path.is_file() else None,
+            )
+            mark_authenticated(self.my_user_id, uid=uid or self.my_user_id)
             mylogger.info('使用cookie自动登录成功！')
-        except Exception as e:
-            mark_login_required(str(e))
-            mylogger.error('登录失败')
-            mylogger.error("[出错原因为：%s]" % e)
+        except AuthenticationRequiredError:
             raise
+        except Exception:
+            mylogger.exception("Cookie 登录流程异常")
+            raise
+
+    def get_current_user_name(self):
+        try:
+            result = self.bro.execute_async_script("""
+const done = arguments[0];
+fetch('https://api.bilibili.com/x/web-interface/nav', {credentials: 'include'})
+  .then(response => response.json())
+  .then(data => done(data.data || {}))
+  .catch(() => done({}));
+""")
+            return result.get("uname") if isinstance(result, dict) else None
+        except Exception:
+            return None
 
     def wait_logged_in(self, timeout=15):
         try:

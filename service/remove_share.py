@@ -29,7 +29,7 @@ class RemoveShareService(object):
             self.bro = bro
             self.chains = chains
         self.cnt = cnt
-        mylogger.error('移除通知信息!')
+        mylogger.info('移除通知信息!')
 
     def get_expired_url(self, scroll_cnt):
         base_url = 'https://space.bilibili.com/385649497/dynamic'
@@ -132,4 +132,4 @@ class RemoveShareService(object):
             self.get_expired_url(10)
             self.quilt_bro()
         else:
-            mylogger.error("移除过期url开关未打开")
+            mylogger.info("移除过期url开关未打开")

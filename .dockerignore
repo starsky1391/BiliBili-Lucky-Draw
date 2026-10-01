@@ -25,3 +25,6 @@ Log/
 cookie/
 admin_web/__pycache__/
 *.pyc
+output/
+lottery-time-research/
+lottery-time-research.zip

@@ -2,15 +2,14 @@ import json
 import os
 import random
 import time
-from pathlib import Path
 
 import requests
 from datetime import datetime
 
 from dao.init_db import init_db
 from dao.pending_unfollow_dao import PendingUnfollowDao
+from service.account_service import cookie_map, cookie_path
 from service.log_service.log_printer_service import MyLogger
-from utils import globals
 from utils.runtime_settings import get_cleanup_mode
 
 mylogger = MyLogger('expired_share_cleanup.py').getLogger()
@@ -24,21 +23,15 @@ class ExpiredShareCleanup:
         self.cookie_value, self.bili_jct = self.load_auth_cookies()
 
     def load_auth_cookies(self):
-        cookie_dir = Path(os.getenv("COOKIE_DIR", "/app/cookie"))
-        cookie_path = cookie_dir / (str(self.account_key) + ".json")
+        path = cookie_path(self.account_key)
         cookies = {}
-        if cookie_path.is_file():
+        if path.is_file():
             try:
-                data = json.loads(cookie_path.read_text(encoding="utf-8"))
-                cookies = {
-                    str(item.get("name")): str(item.get("value"))
-                    for item in data
-                    if item.get("name") and item.get("value")
-                }
+                cookies = cookie_map(json.loads(path.read_text(encoding="utf-8")))
             except (OSError, ValueError, TypeError):
-                mylogger.warning("读取本地登录 Cookie 失败：%s", cookie_path.name)
-        cookie_value = cookies.get("SESSDATA") or globals.cookie_value
-        bili_jct = cookies.get("bili_jct") or globals.bili_jct
+                mylogger.warning("读取本地登录 Cookie 失败：%s", path.name)
+        cookie_value = cookies.get("SESSDATA")
+        bili_jct = cookies.get("bili_jct")
         if not cookie_value or not bili_jct:
             raise RuntimeError("缺少有效的 SESSDATA 或 bili_jct，请先在管理端完成登录")
         if any(ord(char) > 127 for char in cookie_value + bili_jct):
@@ -189,6 +182,8 @@ class ExpiredShareCleanup:
                      ELSE dd.lottery_time END AS cleanup_at
             FROM t_account_dynamic ad JOIN t_draw_dynamic dd ON dd.dynamic_id = ad.dynamic_id
             WHERE ad.account_key=%s AND ad.share_status=1 AND ad.cleanup_status IN (0, 2)
+              AND ad.own_dynamic_id IS NOT NULL AND ad.own_dynamic_id<>''
+              AND ad.own_dynamic_url IS NOT NULL AND ad.own_dynamic_url<>''
               AND dd.lottery_time IS NOT NULL
               AND (CASE WHEN dd.lottery_source='explicit'
                         THEN DATE_ADD(dd.lottery_time, INTERVAL 10 DAY)
@@ -284,5 +279,33 @@ class ExpiredShareCleanup:
                   'spmid': '333.999.0.0', 'csrf': self.bili_jct},
             headers=self.api_headers(json_body=False), timeout=20)
         data = self.parse_api_response(response, '取关')
-        if data.get('code') != 0:
-            raise RuntimeError('B站取关接口返回错误码：%s' % data.get('code'))
+        if data.get('code') == 0:
+            return
+        if data.get('code') in (429, -429, 352, -352):
+            status = self.query_follow_status(up_id, attempts=3)
+            if status is False:
+                return
+            if status is True:
+                raise RuntimeError('B站取关接口返回%s，状态仍为已关注' % data.get('code'))
+            raise RuntimeError('B站取关接口返回%s，取关状态无法确认' % data.get('code'))
+        raise RuntimeError('B站取关接口返回错误码：%s' % data.get('code'))
+
+    def query_follow_status(self, up_id, attempts=3):
+        for attempt in range(attempts):
+            try:
+                response = requests.get(
+                    'https://api.bilibili.com/x/relation',
+                    params={'fid': str(up_id)}, headers=self.api_headers(json_body=False), timeout=20)
+                data = self.parse_api_response(response, '查询关注状态')
+                if data.get('code') == 0:
+                    attribute = int((data.get('data') or {}).get('attribute') or 0)
+                    return (attribute & 2) == 2
+                if data.get('code') in (429, -429, 352, -352):
+                    mylogger.warning('关注状态查询429，第 %s/%s 次重试：%s', attempt + 1, attempts, up_id)
+                else:
+                    return None
+            except Exception as exc:
+                mylogger.warning('查询关注状态失败，第 %s/%s 次重试：%s', attempt + 1, attempts, exc)
+            if attempt < attempts - 1:
+                time.sleep(random.randint(2, 4))
+        return None

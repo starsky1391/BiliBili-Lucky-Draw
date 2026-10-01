@@ -2,7 +2,7 @@ import os
 import random
 
 from dotenv import load_dotenv
-from utils.runtime_settings import get_max_checks
+from utils.runtime_settings import get_max_checks, get_merged_ups
 
 # 加载 .env 文件
 load_dotenv()
@@ -97,7 +97,7 @@ def get_random_from_list(list):
 
 share_content = get_random_share_content()
 comment_content = get_random_comment_content()
-ups = get_multi_infos("ups")
+ups = get_merged_ups()
 db_host = getHost()
 selenium_host = os.getenv("SELENIUM_HOST")
 if selenium_host is None or len(selenium_host) == 0:

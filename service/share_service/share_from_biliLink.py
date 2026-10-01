@@ -18,7 +18,7 @@ from utils import globals
 from utils.globals import get_random_comment_content, get_random_share_content
 from utils.ip_util import remove_query_string
 from utils.webdriver_util import init_webdriver
-from service.auth_service import require_authenticated
+from service.auth_service import AuthenticationRequiredError, require_authenticated
 
 mylogger = MyLogger('share_from_biliLick.py').getLogger()
 
@@ -36,10 +36,9 @@ class BiliLinkShare(object):
         self.draw_dynamic_dao = DrawDynamicDao(db)
         self.statistics_dao = StatisticsDao(db)
         self.account_dynamic_dao = AccountDynamicDao(db)
-        mylogger.error("启动：根据B站up主的分享链接进行抽奖动态转发!")
+        mylogger.info("启动：根据B站up主的分享链接进行抽奖动态转发!")
 
     def do_share_by_links(self):
-        require_authenticated()
         do_share_cnt = 0
         success_share_cnt = 0
         expired_cnt = 0
@@ -50,6 +49,7 @@ class BiliLinkShare(object):
         processed_share_attempts = 0
         try:
             self.login_browser()
+            require_authenticated(self.user_id)
             datas = self.get_pending_dynamic_links()
             ignore_links = self.get_ignore_link()
             for data in datas:
@@ -94,7 +94,7 @@ class BiliLinkShare(object):
                     if not evidence or risk_retry:
                         break
                     risk_retry = True
-                    mylogger.error(
+                    mylogger.warning(
                         "正常转发首次确认 B 站风控特征：%s，暂停 30 秒后重试当前动态：%s",
                         evidence,
                         lucky_dynamic_url
@@ -147,6 +147,8 @@ class BiliLinkShare(object):
                 elif processed_since_restart >= globals.share_browser_recycle_every:
                     self.recycle_browser("已处理%s条动态" % processed_since_restart)
                     processed_since_restart = 0
+        except AuthenticationRequiredError:
+            raise
         except Exception as e:
             mylogger.error("[do_share_by_links 根据url转发动态 出错 %s]" % e, exc_info=True)
         finally:

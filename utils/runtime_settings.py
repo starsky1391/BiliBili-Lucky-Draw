@@ -10,6 +10,17 @@ DEFAULT_MAX_CHECKS = 300
 _lock = Lock()
 
 
+def split_ups(value):
+    if not value:
+        return []
+    items = []
+    for part in str(value).replace("\r", "\n").replace(",", "\n").replace("|", "\n").split("\n"):
+        item = part.strip()
+        if item and item not in items:
+            items.append(item)
+    return items
+
+
 def cleanup_mode_from_env():
     cleanup_enabled = os.getenv("CLEANUP_ENABLED", "").strip().upper() in (
         "1", "Y", "YES", "TRUE", "ON"
@@ -66,6 +77,33 @@ def set_max_checks(value):
         data["max_checks"] = value
         _write_settings(data)
     return value
+
+
+def get_env_ups():
+    return split_ups(os.getenv("ups", ""))
+
+
+def get_extra_ups():
+    with _lock:
+        data = _read_settings()
+        return split_ups(data.get("extra_ups"))
+
+
+def set_extra_ups(value):
+    items = split_ups(value)
+    with _lock:
+        data = _read_settings()
+        data["extra_ups"] = "|".join(items)
+        _write_settings(data)
+    return items
+
+
+def get_merged_ups():
+    items = []
+    for item in get_env_ups() + get_extra_ups():
+        if item not in items:
+            items.append(item)
+    return items
 
 
 def _read_settings():
