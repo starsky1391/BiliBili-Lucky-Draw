@@ -15,3 +15,15 @@ __pycache__
 */__pycache__
 /service/*/__pycache__
 /*/__pycache__
+
+# Local research, generated files and private runtime data
+/lottery-time-research/
+/lottery-time-research.zip
+/output/
+backups/
+*.bilidraw
+*.sqlite3*
+*.verification.json
+*.installed.json
+*.pem
+*.key

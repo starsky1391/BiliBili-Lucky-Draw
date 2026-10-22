@@ -1,0 +1,121 @@
+const $=s=>document.querySelector(s);
+const statusText={UNKNOWN:"已配置，待验证",AUTHENTICATED:"已登录",LOGIN_REQUIRED:"需要登录",LOGIN_IN_PROGRESS:"扫码中",LOGIN_FAILED:"登录失败"};
+async function getJson(url,opts){const r=await fetch(url,opts);if(!r.ok)throw new Error(await r.text());return r.json()}
+function showTab(name){document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active",x.id===name));document.querySelectorAll(".nav").forEach(x=>x.classList.toggle("active",x.dataset.tab===name));if(name==="logs")refreshLogs()}
+document.querySelectorAll(".nav").forEach(x=>x.onclick=()=>showTab(x.dataset.tab));
+function selectedUsers(){return [...document.querySelectorAll(".manual-user:checked")].map(x=>x.value)}
+function userLabel(user){return `${escapeHtml(user.uid)}${user.remark?` <span>${escapeHtml(user.remark)}</span>`:""}`}
+function renderUserDrawStats(items){const el=$("#userDrawStats");if(!el)return;if(!items||!items.length){el.innerHTML='<div class="empty-table">暂无已启用用户</div>';return}el.innerHTML=`<div class="user-draw-head"><span>用户</span><span>未开奖</span><span>已开奖</span></div>${items.map(x=>`<div class="user-draw-row"><div><strong>${escapeHtml(x.uid)}</strong>${x.remark?`<span>${escapeHtml(x.remark)}</span>`:""}</div><strong>${x.pending_draws||0}</strong><strong>${x.completed_draws||0}</strong></div>`).join("")}`}
+async function refreshUsers(){if(document.querySelector(".user-tasks[data-dirty='true']"))return;try{const selected=new Set(selectedUsers()),d=await getJson("/api/users");if(document.querySelector(".user-tasks[data-dirty='true']"))return;const items=d.items||[];$("#userList").innerHTML=items.length?items.map(u=>`<article class="user-row"><div class="user-identity"><strong>${escapeHtml(u.uid)}</strong><span class="user-remark">${escapeHtml(u.remark||"")}</span><small>${escapeHtml(u.username||"未获取用户名")}</small></div><div class="user-state"><span class="state ${u.status==="AUTHENTICATED"?"good":u.status==="LOGIN_REQUIRED"||u.status==="LOGIN_FAILED"?"bad":""}">${escapeHtml(statusText[u.status]||u.status)}</span><small>${u.cookie_saved?"Cookie 已保存":"缺少 Cookie"}${u.last_verified_at?` · ${escapeHtml(u.last_verified_at)}`:""}</small></div><div class="user-edit"><input class="user-remark-input" data-uid="${escapeHtml(u.uid)}" value="${escapeHtml(u.remark||"")}" aria-label="用户备注"><button class="secondary save-user" data-uid="${escapeHtml(u.uid)}">保存备注</button></div><fieldset class="user-tasks" data-uid="${escapeHtml(u.uid)}"><legend>允许执行的任务</legend>${[["collect","收集并转发"],["backfill_personal","完整收集个人转发历史"],["cleanup","删除过期转发并取关"]].map(([key,label])=>`<label><input type="checkbox" data-task="${key}" ${u.tasks?.[key]?"checked":""}>${label}</label>`).join("")}<button class="secondary save-tasks" data-uid="${escapeHtml(u.uid)}">保存任务权限</button></fieldset><div class="user-actions"><button class="secondary relogin-user" data-uid="${escapeHtml(u.uid)}">重新登录</button><button class="secondary verify-user" data-uid="${escapeHtml(u.uid)}">验证 Cookie</button><button class="secondary toggle-user" data-uid="${escapeHtml(u.uid)}" data-enabled="${u.enabled}">${u.enabled?"停用":"启用"}</button></div></article>`).join(""):`<div class="empty-table">暂无用户，添加用户后通过扫码登录。</div>`;$("#manualUserPicker").innerHTML=items.filter(u=>u.enabled).length?items.filter(u=>u.enabled).map(u=>`<label class="manual-user-option"><input class="manual-user" type="checkbox" value="${escapeHtml(u.uid)}" ${selected.has(u.uid)?"checked":""}><span>${escapeHtml(u.uid)}</span><small>${escapeHtml(u.remark||u.username||"")}</small></label>`).join(""):`<span class="empty-table">暂无已启用用户</span>`;document.querySelectorAll(".user-tasks input").forEach(input=>input.onchange=()=>input.closest(".user-tasks").dataset.dirty="true");document.querySelectorAll(".save-tasks").forEach(b=>b.onclick=()=>saveUserTasks(b.dataset.uid));document.querySelectorAll(".save-user").forEach(b=>b.onclick=()=>saveUserRemark(b.dataset.uid));document.querySelectorAll(".relogin-user").forEach(b=>b.onclick=()=>startUserLogin(b.dataset.uid));document.querySelectorAll(".verify-user").forEach(b=>b.onclick=()=>verifyUser(b.dataset.uid));document.querySelectorAll(".toggle-user").forEach(b=>b.onclick=()=>toggleUser(b.dataset.uid,b.dataset.enabled==="true"))}catch(e){$("#userList").innerHTML=`<div class="empty-table">${escapeHtml(e.message)}</div>`}}
+async function saveUserRemark(uid){const input=document.querySelector(`.user-remark-input[data-uid="${CSS.escape(uid)}"]`);try{await getJson(`/api/users/${encodeURIComponent(uid)}`,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({remark:input.value})});await refreshUsers()}catch(e){alert(e.message)}}
+async function verifyUser(uid){try{await getJson(`/api/users/${encodeURIComponent(uid)}/verify`,{method:"POST"});await refreshUsers()}catch(e){alert(e.message);refreshUsers()}}
+async function toggleUser(uid,enabled){try{await getJson(`/api/users/${encodeURIComponent(uid)}/${enabled?"disable":"enable"}`,{method:"POST"});await refreshUsers()}catch(e){alert(e.message)}}
+async function refreshOverview(){try{const d=await getJson("/api/overview"),a=d.auth,s=statusText[a.status]||a.status;$("#authBadge").textContent=s;$("#authBadge").className="badge "+(a.status==="AUTHENTICATED"?"ok":a.status==="LOGIN_REQUIRED"||a.status==="LOGIN_FAILED"?"bad":"muted");$("#authValue").textContent=s;$("#authTime").textContent=a.last_verified_at||"尚未验证";$("#collectValue").textContent=d.tasks.collect==="paused"?"已暂停":d.tasks.collect==="pending_verification"?"待验证":"等待调度";$("#cleanupValue").textContent=d.tasks.cleanup==="paused"?"已暂停":d.tasks.cleanup==="pending_verification"?"待验证":"等待调度";renderUserDrawStats(d.user_draw_stats);$("#systemNote").textContent=a.status==="AUTHENTICATED"?"任务可运行":a.status==="UNKNOWN"?"等待首次验证":"B 站操作已暂停";$("#overviewNote").textContent=a.last_error||"数据库、统计和日志仍保持可用。";$("#updatedAt").textContent=d.updated_at}catch(e){$("#overviewNote").textContent=e.message}}
+async function refreshManualTasks(){try{const d=await getJson("/api/tasks/manual-status");updateManualButton("collect",d.collect);updateManualButton("backfill_personal",d.backfill_personal);updateManualButton("cleanup",d.cleanup);updateManualButton("reidentify_expired",d.reidentify_expired);updateManualButton("reidentify_one",d.reidentify_one);renderManualTaskStatus(d)}catch(e){}}
+function manualButtonId(name){return name==="collect"?"startCollectTask":name==="backfill_personal"?"startBackfillPersonal":name==="cleanup"?"startCleanupTask":name==="reidentify_expired"?"reidentifyExpired":"reidentifyOne"}
+function manualButtonLabel(name){return name==="collect"||name==="backfill_personal"||name==="cleanup"?"立即启动":name==="reidentify_expired"?"全部重新识别（100条）":"重新识别"}
+function updateManualButton(name,state){const button=$("#"+manualButtonId(name));if(!button)return;button.disabled=state.running;button.textContent=state.running?"执行中":manualButtonLabel(name)}
+async function startManualTask(name){const button=$("#"+manualButtonId(name)),status=$("#manualTaskStatus"),user_ids=selectedUsers();button.disabled=true;button.textContent="启动中";try{const result=await getJson(`/api/tasks/manual/${name}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({user_ids})});if(!result.started){button.disabled=false;button.textContent=manualButtonLabel(name);status.textContent=result.reason||"任务未启动";return}status.textContent=`任务已启动 · ${user_ids.join("、")}`;pollManualTasks()}catch(e){button.disabled=false;button.textContent=manualButtonLabel(name);status.textContent=`启动失败：${e.message}`}}
+async function pollManualTasks(){const d=await getJson("/api/tasks/manual-status");updateManualButton("collect",d.collect);updateManualButton("backfill_personal",d.backfill_personal);updateManualButton("cleanup",d.cleanup);updateManualButton("reidentify_expired",d.reidentify_expired);updateManualButton("reidentify_one",d.reidentify_one);if(d.collect.running||d.backfill_personal.running||d.cleanup.running||d.reidentify_expired.running||d.reidentify_one.running){setTimeout(pollManualTasks,2000)}else{refreshOverview();refreshFailures();refreshExpired()}}
+function renderManualTaskStatus(tasks){const el=$("#manualTaskStatus");if(!el)return;const active=Object.entries(tasks).find(([,value])=>value.running);if(active){el.textContent=`${active[0]==="cleanup"?"清理任务":active[0]==="backfill_personal"?"完整收集个人转发":active[0]==="collect"?"收集任务":"重新识别任务"}正在执行 · ${(active[1].user_ids||[]).join("、")}`;return}const result=Object.entries(tasks).find(([,value])=>Array.isArray(value.summary)&&value.summary.length);if(result){const [name,state]=result;const labels={completed:"完成",paused:"已暂停",failed:"失败"};el.textContent=`${name==="cleanup"?"清理任务":name==="backfill_personal"?"个人转发回填":name==="collect"?"收集任务":"重新识别"}：`+state.summary.map(x=>`${x.account||"收集"} ${labels[x.status]||x.status||""}${x.error?`（${x.error}）`:""}`).join("；");return}el.textContent="没有正在运行的手动任务"}
+function dynamicMarkup(x,action){const expired=String(x.status)==="2";return `<tr><td><a href="${x.dyn_url}" target="_blank">${x.dyn_url}</a><span class="subline">动态 ID ${x.dynamic_id||"未知"}</span></td><td>${x.up_id||"未知"}</td><td>${x.insert_time||"未知"}</td><td>${x.publish_time||"未识别"}</td><td>${x.lottery_time||"未识别"}</td><td><span class="state ${expired?"pending":""}">${expired?"疑似过期":"识别失败"}</span></td><td>${action}</td></tr>`}
+function dynamicTable(items,action){return `<table><thead><tr><th>动态</th><th>UP</th><th>入库时间</th><th>动态发布时间</th><th>开奖时间</th><th>状态</th><th>操作</th></tr></thead><tbody>${items.map(x=>dynamicMarkup(x,action(x))).join("")}</tbody></table>`}
+async function refreshFailures(){const d=await getJson("/api/dynamics/failures");$("#failureQueueCount").textContent=d.items.length;$("#failureList").innerHTML=d.items.length?dynamicTable(d.items,x=>`<button class="secondary mark-missing" data-id="${x.dynamic_id}">页面丢失</button>`):"<div class=\"empty-table\">当前没有失败动态。</div>";document.querySelectorAll(".mark-missing").forEach(x=>x.onclick=()=>markMissing(x.dataset.id))}
+async function refreshExpired(){const d=await getJson("/api/dynamics/expired");$("#expiredQueueCount").textContent=d.count;$("#expiredList").innerHTML=d.items.length?dynamicTable(d.items,x=>`<button class="secondary reidentify-one" data-id="${x.dynamic_id}">重新识别</button>`):"<div class=\"empty-table\">当前没有过期或疑似误判动态。</div>";document.querySelectorAll(".reidentify-one").forEach(x=>x.onclick=()=>reidentifyOne(x.dataset.id))}
+async function markMissing(id){try{await getJson(`/api/dynamics/${encodeURIComponent(id)}/mark-missing`,{method:"POST"});await refreshFailures();refreshOverview()}catch(e){alert(e.message)}}
+async function markAllMissing(){if(!confirm("确定将全部失败动态标记为页面丢失吗？此操作不会访问 B 站，但会移出失败列表。"))return;const b=$("#markAllMissing");b.disabled=true;b.textContent="处理中";try{const d=await getJson("/api/dynamics/mark-all-missing",{method:"POST"});alert(`已标记 ${d.marked} 条动态`);await refreshFailures();refreshOverview()}catch(e){alert(e.message)}finally{b.disabled=false;b.textContent="全部标记页面丢失"}}
+async function retryFailures(){const b=$("#retryFailures"),user_ids=selectedUsers();b.disabled=true;b.textContent="重新识别中";try{const result=await getJson("/api/dynamics/retry-failures",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({user_ids})});if(!result.started){b.disabled=false;b.textContent="全部重新识别";alert(result.reason||"任务未启动");return}pollRetryStatus()}catch(e){b.disabled=false;b.textContent="全部重新识别";alert(e.message)}}
+async function pollRetryStatus(){const d=await getJson("/api/dynamics/retry-status");if(d.running){setTimeout(pollRetryStatus,2000);return}$("#retryFailures").disabled=false;$("#retryFailures").textContent="全部重新识别";await refreshFailures();refreshOverview()}
+async function reidentifyOne(id){const user_id=selectedUsers()[0];if(!user_id){alert("请先选择一个用户");return}try{await getJson(`/api/dynamics/${encodeURIComponent(id)}/reidentify`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({user_id})});pollManualTasks()}catch(e){alert(e.message)}}
+let logsLoading=false;
+function escapeHtml(value){return String(value).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]))}
+function logMarkup(line){const match=String(line).match(/^(\d{4}-\d{2}-\d{2}\s+[^,]+,\d+)\s+-\s+(.+?)\s+-\s+(INFO|WARNING|ERROR|CRITICAL|DEBUG)\s+-\s+(.*)$/);if(!match)return `<div class="log-row"><span class="log-time"></span><span class="log-level">LOG</span><span class="log-message">${escapeHtml(line)}</span></div>`;const level=match[3],levelClass=level==="ERROR"||level==="CRITICAL"?" error":"";return `<div class="log-row"><span class="log-time">${escapeHtml(match[1])}</span><span class="log-level${levelClass}">${level}</span><span class="log-message">${escapeHtml(match[2])} · ${escapeHtml(match[4])}</span></div>`}
+function logTextSelected(box){
+  const selection=window.getSelection();
+  if(!selection||selection.isCollapsed)return false;
+  for(let i=0;i<selection.rangeCount;i++){
+    if(selection.getRangeAt(i).intersectsNode(box))return true;
+  }
+  return false;
+}
+async function refreshLogs(){
+  if(logsLoading)return;
+  const box=$("#logBox"),state=$("#logRefreshState");
+  if(logTextSelected(box)){state.textContent="已选中日志，暂停刷新；取消选择后自动恢复";return}
+  logsLoading=true;
+  const wasNearBottom=box.scrollHeight-box.scrollTop-box.clientHeight<48,previousTop=box.scrollTop;
+  try{
+    const limit=$("#logLimit").value,errors=$("#logErrorsOnly").checked,d=await getJson(`/api/logs?limit=${limit}&errors_only=${errors}`);
+    if(logTextSelected(box)){state.textContent="已选中日志，暂停刷新；取消选择后自动恢复";return}
+    box.innerHTML=d.items.length?d.items.map(logMarkup).join(""):"<div class=\"empty-table\">暂无日志</div>";
+    box.scrollTop=wasNearBottom?box.scrollHeight:Math.min(previousTop,box.scrollHeight-box.clientHeight);
+    state.textContent=`实时刷新中 · 每 3 秒 · 更新于 ${new Date().toLocaleTimeString()}`;
+  }catch(e){state.textContent=`日志刷新失败 · ${e.message}`}finally{logsLoading=false}
+}
+async function loadLoginQr(){const image=$("#loginQr"),placeholder=$("#qrPlaceholder");image.classList.remove("ready");placeholder.textContent="正在获取二维码...";for(let i=0;i<30;i++){const d=await getJson(`/api/auth/qrcode/image?t=${Date.now()}`);if(d.ready&&d.image){image.src=d.image;image.classList.add("ready");$("#loginState").textContent="等待扫码";return}await new Promise(r=>setTimeout(r,500))}placeholder.textContent="二维码暂不可用，请刷新重试";throw new Error("二维码获取超时，请点击刷新二维码重试")}
+async function openLoginModal(){const modal=$("#loginModal");modal.classList.remove("hidden");$("#loginState").textContent="正在连接";$("#loginHint").textContent="扫码后将自动验证并保存登录状态。";await loadLoginQr()}
+function closeLoginModal(){const modal=$("#loginModal");modal.classList.add("hidden");$("#loginQr").removeAttribute("src");$("#loginQr").classList.remove("ready")}
+async function startUserLogin(uid=null){try{await getJson("/api/users/login/start",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(uid?{uid}: {})});await openLoginModal();pollLogin()}catch(e){$("#loginModal").classList.remove("hidden");$("#loginState").textContent="启动失败";$("#qrPlaceholder").textContent="二维码暂不可用";$("#loginHint").textContent=e.message}}
+async function refreshCleanupSettings(){const d=await getJson("/api/settings/cleanup");const select=$("#cleanupMode");select.innerHTML=d.options.map(x=>`<option value="${x.value}">${x.label}</option>`).join("");select.value=d.mode;updateCleanupHint(d.mode)}
+async function refreshMaxChecks(){const d=await getJson("/api/settings/max-checks");$("#maxChecks").value=d.max_checks}
+function joinUps(items){return (items||[]).join("\n")}
+function showUpsSettings(d){const extra=d.extra_ups||[],merged=d.merged_ups||[];$("#extraUps").value=joinUps(extra);$("#envUps").textContent=(d.env_ups||[]).join(" | ")||"未配置";$("#mergedUps").textContent=merged.join(" | ")||"未配置";$("#upsOverview").textContent=`追加 ${extra.length} 项 · 最终生效 ${merged.length} 项`}
+async function refreshUpsSettings(){const d=await getJson("/api/settings/ups");showUpsSettings(d)}
+function updateCleanupHint(mode){$("#cleanupModeHint").textContent=mode==="disabled"?"当前不会删除动态，也不会取关。":mode==="delete_only"?"当前只删除本人过期动态，不执行取关。":"当前删除本人过期动态，并在确认没有其他有效抽奖后取关相关 UP。"}
+async function saveCleanupMode(){const button=$("#saveCleanupMode");button.disabled=true;try{const mode=$("#cleanupMode").value;await getJson("/api/settings/cleanup",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({mode})});updateCleanupHint(mode);button.textContent="已保存";setTimeout(()=>button.textContent="保存清理设置",1200);refreshOverview()}catch(e){alert(e.message)}finally{button.disabled=false}}
+async function saveMaxChecks(){const button=$("#saveMaxChecks");button.disabled=true;try{const max_checks=Number($("#maxChecks").value);await getJson("/api/settings/max-checks",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({max_checks})});button.textContent="已保存";setTimeout(()=>button.textContent="保存扫描设置",1200)}catch(e){alert(e.message)}finally{button.disabled=false}}
+async function saveUps(){const button=$("#saveUps");button.disabled=true;try{const d=await getJson("/api/settings/ups",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({extra_ups:$("#extraUps").value})});showUpsSettings(d);button.textContent="已保存";setTimeout(()=>button.textContent="保存订阅 UP",1200)}catch(e){alert(e.message)}finally{button.disabled=false}}
+$("#refreshDynamics").onclick=()=>{refreshFailures();refreshExpired()};$("#refreshFailures").onclick=refreshFailures;$("#refreshExpired").onclick=refreshExpired;$("#refreshLogs").onclick=refreshLogs;$("#logLimit").onchange=refreshLogs;$("#logErrorsOnly").onchange=refreshLogs;$("#retryFailures").onclick=retryFailures;$("#markAllMissing").onclick=markAllMissing;$("#reidentifyExpired").onclick=()=>startManualTask("reidentify_expired");$("#cleanupMode").onchange=e=>updateCleanupHint(e.target.value);$("#saveCleanupMode").onclick=saveCleanupMode;$("#saveMaxChecks").onclick=saveMaxChecks;$("#saveUps").onclick=saveUps;$("#startCollectTask").onclick=()=>startManualTask("collect");$("#startBackfillPersonal").onclick=()=>startManualTask("backfill_personal");$("#startCleanupTask").onclick=()=>startManualTask("cleanup");
+$("#addUser").onclick=()=>startUserLogin();$("#refreshUsers").onclick=refreshUsers;
+$("#closeLogin").onclick=closeLoginModal;$(".modal-backdrop").onclick=closeLoginModal;
+$("#refreshLogin").onclick=async()=>{const button=$("#refreshLogin");button.disabled=true;try{$("#loginState").textContent="正在刷新二维码";await getJson("/api/auth/refresh",{method:"POST"});await loadLoginQr()}catch(e){$("#loginState").textContent="刷新失败";$("#qrPlaceholder").textContent=e.message;$("#loginHint").textContent=e.message}finally{button.disabled=false}};
+async function pollLogin(){const a=await getJson("/api/users/login/status");$("#loginState").textContent=statusText[a.status]||a.status;if(a.status==="AUTHENTICATED"){closeLoginModal();refreshOverview();refreshUsers();return}if(a.status==="LOGIN_IN_PROGRESS"){setTimeout(pollLogin,2000)}else if(a.status==="LOGIN_FAILED"){closeLoginModal();$("#loginHint").textContent=a.error||"登录失败，请刷新二维码重试";refreshUsers();refreshOverview()}else{refreshOverview();setTimeout(pollLogin,3000)}}
+refreshOverview();refreshFailures();refreshExpired();refreshCleanupSettings();refreshMaxChecks();refreshUpsSettings();refreshManualTasks();refreshUsers();setInterval(refreshOverview,10000);setInterval(refreshManualTasks,3000);setInterval(refreshUsers,10000);setInterval(()=>{if($("#logs").classList.contains("active"))refreshLogs()},3000);
+
+
+async function saveUserTasks(uid){
+  const group=document.querySelector(`.user-tasks[data-uid="${CSS.escape(uid)}"]`);
+  const tasks=Object.fromEntries([...group.querySelectorAll("[data-task]")].map(input=>[input.dataset.task,input.checked]));
+  try{
+    await getJson(`/api/users/${encodeURIComponent(uid)}/tasks`,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(tasks)});
+    delete group.dataset.dirty;
+    group.querySelector("button").textContent="已保存";
+    await refreshUsers();
+  }catch(error){alert(error.message)}
+}
+
+let backupToken=null;
+$("#exportBackup").onclick=async()=>{
+  const button=$("#exportBackup"),status=$("#backupStatus");button.disabled=true;
+  try{
+    status.textContent="正在导出历史记录…";
+    const response=await fetch("/api/backups/export",{method:"POST"});
+    if(!response.ok)throw new Error(await response.text());
+    const blob=await response.blob(),url=URL.createObjectURL(blob),link=document.createElement("a");
+    link.href=url;link.download=`BiliDraw-${new Date().toISOString().slice(0,10)}.bilidraw`;
+    document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);
+    status.textContent="备份已生成，包含历史记录、账号任务权限、设置和日志，不含 Cookie。";
+  }catch(error){status.textContent=error.message}finally{button.disabled=false}
+};
+$("#backupFile").onchange=async event=>{
+  backupToken=null;$("#importBackup").disabled=true;
+  const file=event.target.files[0],status=$("#backupStatus");if(!file)return;
+  try{
+    status.textContent="正在检查备份…";
+    const response=await fetch("/api/backups/preview",{method:"POST",headers:{"Content-Type":"application/octet-stream"},body:file});
+    if(!response.ok)throw new Error(await response.text());
+    const data=await response.json();backupToken=data.token;$("#importBackup").disabled=false;
+    status.textContent=`备份包含 ${data.accounts.length} 个账号、${data.counts.t_draw_dynamic} 条动态、${data.counts.t_account_dynamic} 条账号转发记录、${data.log_files} 个日志文件。确认后合并导入，保留当前设置及同账号的已有任务权限。`;
+  }catch(error){status.textContent=error.message}
+};
+$("#importBackup").onclick=async()=>{
+  if(!backupToken||!confirm("确定合并此备份吗？程序会先保存当前数据备份，再合并历史记录；已有转发和删除状态会保留。"))return;
+  const button=$("#importBackup"),status=$("#backupStatus");button.disabled=true;
+  try{
+    status.textContent="正在备份当前数据并合并导入…";
+    const data=await getJson("/api/backups/import",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({token:backupToken})});
+    backupToken=null;
+    status.textContent=`导入完成：${data.counts.t_draw_dynamic} 条动态、${data.counts.t_account_dynamic} 条账号转发记录。导入前备份：${data.rollback_path}。导入账号如未登录，请重新扫码。`;
+    await Promise.all([refreshUsers(),refreshOverview(),refreshCleanupSettings(),refreshMaxChecks(),refreshUpsSettings()]);
+  }catch(error){status.textContent=error.message;button.disabled=false}
+};

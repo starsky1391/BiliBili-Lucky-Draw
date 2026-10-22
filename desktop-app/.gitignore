@@ -1,0 +1,13 @@
+.venv/
+.browser-cache/
+build/
+dist/
+dist-*/
+migration-*/
+__pycache__/
+*.sqlite3*
+.env
+cookie/
+Log/
+backups/
+*.bilidraw
